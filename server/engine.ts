@@ -63,7 +63,8 @@ async function runLoop(run: RunState) {
       const result = await createCompletion({
         baseUrl: run.config.baseUrl,
         apiKey: run.config.apiKey,
-        model: run.config.model,
+        protocol: run.config.protocol,
+        modelHint: run.config.modelHint,
         messages: [
           { role: "system", content: "你只输出符合要求的诗歌文本。" },
           { role: "user", content: prompt }
@@ -83,7 +84,8 @@ async function runLoop(run: RunState) {
         completionTokens: result.completionTokens,
         totalTokens: run.totalTokens,
         totalEstimatedCost: run.totalEstimatedCost,
-        absurdity: calcAbsurdity(round, run.totalTokens)
+        absurdity: calcAbsurdity(round, run.totalTokens),
+        routedModel: result.routedModel
       });
     } catch (error) {
       run.status = "error";

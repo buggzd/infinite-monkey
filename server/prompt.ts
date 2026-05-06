@@ -5,7 +5,8 @@ export function resolveRun(input: PoemStartInput): ResolvedPoemRun {
   return {
     baseUrl: input.baseUrl,
     apiKey: input.apiKey,
-    model: input.model,
+    protocol: input.protocol,
+    modelHint: input.modelHint,
     theme: input.theme?.trim() || rollTheme(),
     firstChar: resolveConstraint(input.firstChar),
     secondChar: resolveConstraint(input.secondChar),

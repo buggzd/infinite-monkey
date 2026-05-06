@@ -37,7 +37,7 @@ cp .env.example .env
 npm run dev
 ```
 
-The first AI adapter uses the OpenAI-compatible `POST /chat/completions` shape. If cc-switch is reachable but the model name is not routed, the UI will show the proxy error and keep the run stoppable.
+The default AI adapter uses the Anthropic Messages shape, `POST /messages`, because cc-switch can handle model routing behind that protocol. The app still sends a required model hint, but the user-facing choice is the protocol, not a concrete model. OpenAI-compatible `POST /chat/completions` is available as a fallback protocol.
 
 ## License
 

@@ -10,7 +10,8 @@ const app = Fastify({ logger: true });
 const startSchema = z.object({
   baseUrl: z.string().url().default(serverConfig.ccSwitchBaseUrl),
   apiKey: z.string().optional(),
-  model: z.string().min(1).default(serverConfig.defaultModel),
+  protocol: z.enum(["anthropic", "openai"]).default(serverConfig.defaultProtocol === "openai" ? "openai" : "anthropic"),
+  modelHint: z.string().min(1).default(serverConfig.modelHint),
   theme: z.string().optional(),
   firstChar: z.string().optional(),
   secondChar: z.string().optional(),
@@ -27,7 +28,8 @@ await app.register(cors, {
 app.get("/api/health", async () => ({
   ok: true,
   ccSwitchBaseUrl: serverConfig.ccSwitchBaseUrl,
-  defaultModel: serverConfig.defaultModel
+  defaultProtocol: serverConfig.defaultProtocol,
+  modelHint: serverConfig.modelHint
 }));
 
 app.get("/api/theme/roll", async () => ({

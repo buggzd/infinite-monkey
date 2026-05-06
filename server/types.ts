@@ -1,7 +1,10 @@
+export type AiProtocol = "anthropic" | "openai";
+
 export type PoemStartInput = {
   baseUrl: string;
   apiKey?: string;
-  model: string;
+  protocol: AiProtocol;
+  modelHint: string;
   theme?: string;
   firstChar?: string;
   secondChar?: string;
@@ -11,7 +14,9 @@ export type PoemStartInput = {
   temperature: number;
 };
 
-export type ResolvedPoemRun = Required<Pick<PoemStartInput, "baseUrl" | "model" | "intervalMs" | "maxRounds" | "temperature">> &
+export type ResolvedPoemRun = Required<
+  Pick<PoemStartInput, "baseUrl" | "protocol" | "modelHint" | "intervalMs" | "maxRounds" | "temperature">
+> &
   Pick<PoemStartInput, "apiKey"> & {
     theme: string;
     firstChar: string;
@@ -29,6 +34,7 @@ export type PoemRound = {
   totalTokens: number;
   totalEstimatedCost: number;
   absurdity: number;
+  routedModel?: string;
 };
 
 export type RunStatus = "starting" | "running" | "stopped" | "done" | "error";

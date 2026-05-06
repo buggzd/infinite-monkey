@@ -23,7 +23,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -144,7 +145,8 @@ label {
   font-weight: 800;
 }
 
-input {
+input,
+select {
   width: 100%;
   min-height: 40px;
   border: 1px solid rgba(148, 163, 184, 0.24);
@@ -155,9 +157,20 @@ input {
   outline: none;
 }
 
-input:focus {
+input:focus,
+select:focus {
   border-color: #67e8f9;
   box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.14);
+}
+
+.route-note {
+  border: 1px solid rgba(103, 232, 249, 0.18);
+  border-radius: 7px;
+  padding: 10px 11px;
+  color: #a5f3fc;
+  background: rgba(8, 47, 73, 0.34);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .field-row {

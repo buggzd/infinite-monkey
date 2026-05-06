@@ -2,7 +2,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type RunConfig = {
   baseUrl: string;
-  model: string;
+  protocol: "anthropic" | "openai";
+  modelHint: string;
   theme: string;
   firstChar: string;
   secondChar: string;
@@ -22,6 +23,7 @@ type PoemRound = {
   totalTokens: number;
   totalEstimatedCost: number;
   absurdity: number;
+  routedModel?: string;
 };
 
 type PoemEvent =
@@ -30,10 +32,23 @@ type PoemEvent =
   | { type: "status"; runId: string; status: "starting" | "running" | "stopped" | "done" | "error"; message?: string }
   | { type: "error"; runId: string; message: string };
 
-const defaultSettings = {
+type Settings = {
+  baseUrl: string;
+  apiKey: string;
+  protocol: "anthropic" | "openai";
+  theme: string;
+  firstChar: string;
+  secondChar: string;
+  thirdChar: string;
+  intervalMs: number;
+  maxRounds: number;
+  temperature: number;
+};
+
+const defaultSettings: Settings = {
   baseUrl: "http://127.0.0.1:65110/v1",
   apiKey: "",
-  model: "auto",
+  protocol: "anthropic",
   theme: "",
   firstChar: "",
   secondChar: "",
@@ -61,10 +76,10 @@ function statusText(status: string) {
 
 function friendlyError(message: string) {
   if (message.includes("全部渠道不可提供当前模型")) {
-    return `${message}\n\n模型没有被 cc-switch 当前路由接住。换一个 cc-switch 已配置的模型名，或在 cc-switch 里把这个模型加入全局路由。`;
+    return `${message}\n\ncc-switch 收到了请求，但当前全局路由没有可用渠道。检查 cc-switch 的全局路由、账号额度或协议选择。`;
   }
   if (message.includes("404")) {
-    return `${message}\n\n代理地址可达，但接口路径不匹配。可以试试把 base URL 改成 http://127.0.0.1:65110/v1。`;
+    return `${message}\n\n代理地址可达，但接口路径不匹配。Anthropic 协议会请求 /v1/messages，OpenAI 协议会请求 /v1/chat/completions。`;
   }
   return message;
 }
@@ -111,6 +126,7 @@ export function App() {
       body: JSON.stringify({
         ...settings,
         apiKey: settings.apiKey.trim() || undefined,
+        modelHint: settings.protocol === "anthropic" ? "claude-3-5-sonnet-20241022" : "gpt-4o-mini",
         firstChar: asSingleGlyph(settings.firstChar) || undefined,
         secondChar: asSingleGlyph(settings.secondChar) || undefined,
         thirdChar: asSingleGlyph(settings.thirdChar) || undefined
@@ -192,11 +208,16 @@ export function App() {
 
             <div className="field-row">
               <label>
-                模型
-                <input
-                  value={settings.model}
-                  onChange={(event) => setSettings((current) => ({ ...current, model: event.target.value }))}
-                />
+                协议
+                <select
+                  value={settings.protocol}
+                  onChange={(event) =>
+                    setSettings((current) => ({ ...current, protocol: event.target.value as "anthropic" | "openai" }))
+                  }
+                >
+                  <option value="anthropic">Anthropic Messages</option>
+                  <option value="openai">OpenAI Chat</option>
+                </select>
               </label>
               <label>
                 温度
@@ -209,6 +230,10 @@ export function App() {
                   onChange={(event) => setSettings((current) => ({ ...current, temperature: Number(event.target.value) }))}
                 />
               </label>
+            </div>
+
+            <div className="route-note">
+              模型由 cc-switch 全局路由决定；本应用只选择请求协议。
             </div>
 
             <label>
@@ -325,7 +350,7 @@ export function App() {
                 <article className="poem" key={`${round.runId}-${round.round}`}>
                   <header>
                     <span>#{round.round}</span>
-                    <span>{round.completionTokens} completion tokens</span>
+                    <span>{round.routedModel ? `cc-switch: ${round.routedModel}` : `${round.completionTokens} completion tokens`}</span>
                   </header>
                   <pre>{round.poem}</pre>
                 </article>
