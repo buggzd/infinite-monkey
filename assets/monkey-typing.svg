@@ -112,6 +112,42 @@
     </style>
   </defs>
 
+  <script><![CDATA[
+    (function () {
+      const ranges = [
+        [0x4e00, 0x9fa5],
+        [0x3041, 0x3096],
+        [0x30a1, 0x30fa],
+        [0x0041, 0x005a],
+        [0x0061, 0x007a],
+        [0x0030, 0x0039]
+      ];
+      const extras = ["∞", "?", "!", "+", "#", "$"];
+
+      function fromRange(start, end) {
+        const code = start + Math.floor(Math.random() * (end - start + 1));
+        return String.fromCharCode(code);
+      }
+
+      function pickGlyph() {
+        if (Math.random() < 0.12) {
+          return extras[Math.floor(Math.random() * extras.length)];
+        }
+        const range = ranges[Math.floor(Math.random() * ranges.length)];
+        return fromRange(range[0], range[1]);
+      }
+
+      function refresh() {
+        document.querySelectorAll(".bonfire text").forEach((node) => {
+          node.textContent = pickGlyph();
+        });
+      }
+
+      refresh();
+      window.setInterval(refresh, 420);
+    }());
+  ]]></script>
+
   <!-- Background -->
   <rect width="960" height="720" fill="url(#bgGlow)" />
 
@@ -202,13 +238,13 @@
 
   <!-- Bonfire Particles (Tokens/Poetry) -->
   <g class="bonfire" filter="url(#glow-small)">
-    <text class="p p1" x="550" y="550">月</text>
-    <text class="p p2" x="580" y="560">荒</text>
-    <text class="p p3" x="520" y="540">诗</text>
+    <text class="p p1" x="550" y="550">AI</text>
+    <text class="p p2" x="580" y="560">詩</text>
+    <text class="p p3" x="520" y="540">?</text>
     <text class="p p4" x="620" y="570">Token</text>
-    <text class="p p5" x="560" y="550">+1</text>
+    <text class="p p5" x="560" y="550">夢</text>
     <text class="p p6" x="590" y="580">Loop</text>
-    <text class="p p7" x="540" y="560">耗尽</text>
+    <text class="p p7" x="540" y="560">∞</text>
     <text class="p p8" x="610" y="550">0</text>
     <text class="p p9" x="570" y="540">1</text>
   </g>

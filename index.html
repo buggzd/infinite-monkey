@@ -30,9 +30,10 @@
         align-items: center;
       }
 
-      img {
+      object {
         width: 100%;
         height: auto;
+        aspect-ratio: 4 / 3;
         display: block;
       }
 
@@ -90,7 +91,7 @@
   </head>
   <body>
     <main>
-      <img src="assets/monkey-typing.svg" alt="A monkey endlessly typing at a keyboard">
+      <object data="assets/monkey-typing.svg" type="image/svg+xml" aria-label="A monkey endlessly typing at a keyboard"></object>
       <section>
         <h1>Infinite Monkey</h1>
         <p>一个讽刺 AI token 浪费的诗歌机器：骰子选择主题，程序抽取汉字，模型不停写诗，直到意义浓度被仪表盘宣布依然不足。</p>
