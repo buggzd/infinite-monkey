@@ -20,6 +20,25 @@ The project idea: roll a random theme, draw one to three Chinese characters from
 - Allow the base URL to point at `cc-switch`, for example `http://127.0.0.1:15721`.
 - Visualize token usage as part of the satire instead of hiding it.
 
+## Development
+
+```bash
+npm install
+npm run dev
+```
+
+The app starts a Vite UI at `http://127.0.0.1:5173` and a Fastify API at `http://127.0.0.1:8787`.
+
+For the current cc-switch proxy setup:
+
+```bash
+cp .env.example .env
+# CCSWITCH_BASE_URL=http://127.0.0.1:65110/v1
+npm run dev
+```
+
+The first AI adapter uses the OpenAI-compatible `POST /chat/completions` shape. If cc-switch is reachable but the model name is not routed, the UI will show the proxy error and keep the run stoppable.
+
 ## License
 
 MIT
