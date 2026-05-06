@@ -67,7 +67,7 @@ function statusText(status: string) {
     idle: "待机",
     starting: "点火",
     running: "燃烧",
-    stopped: "停止",
+    stopped: "暂停",
     done: "完成",
     error: "故障"
   };
@@ -91,14 +91,16 @@ export function App() {
   const [runId, setRunId] = useState("");
   const [activeConfig, setActiveConfig] = useState<RunConfig | null>(null);
   const [error, setError] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [pageTurnKey, setPageTurnKey] = useState(0);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const latestRound = rounds.at(-1);
   const metrics = useMemo(() => {
     const totalTokens = latestRound?.totalTokens ?? 0;
-    const totalEstimatedCost = latestRound?.totalEstimatedCost ?? 0;
-    const absurdity = latestRound?.absurdity ?? 0;
-    return { totalTokens, totalEstimatedCost, absurdity };
+    const callCount = rounds.length;
+    return { totalTokens, callCount };
   }, [latestRound]);
 
   useEffect(() => {
@@ -106,6 +108,13 @@ export function App() {
       eventSourceRef.current?.close();
     };
   }, []);
+
+  useEffect(() => {
+    if (rounds.length > 0) {
+      setPageIndex(rounds.length - 1);
+      setPageTurnKey((current) => current + 1);
+    }
+  }, [rounds.length]);
 
   async function rollTheme() {
     const response = await fetch("/api/theme/roll");
@@ -177,9 +186,12 @@ export function App() {
   }
 
   const running = status === "starting" || status === "running";
-  const constraintPreview = activeConfig
+  const firstCharsPreview = activeConfig
     ? `${activeConfig.firstChar}${activeConfig.secondChar}${activeConfig.thirdChar}`
-    : `${settings.firstChar || "?"}${settings.secondChar || "?"}${settings.thirdChar || "?"}`;
+    : settings.firstChar || settings.secondChar || settings.thirdChar
+      ? `${settings.firstChar || "?"}${settings.secondChar || "?"}${settings.thirdChar || "?"}`
+      : "随机";
+  const currentPage = rounds[pageIndex];
 
   return (
     <main className="shell">
@@ -198,163 +210,197 @@ export function App() {
 
         <div className="dashboard">
           <form className="panel controls" onSubmit={start}>
-            <label>
-              cc-switch
-              <input
-                value={settings.baseUrl}
-                onChange={(event) => setSettings((current) => ({ ...current, baseUrl: event.target.value }))}
-              />
-            </label>
-
-            <div className="field-row">
-              <label>
-                协议
-                <select
-                  value={settings.protocol}
-                  onChange={(event) =>
-                    setSettings((current) => ({ ...current, protocol: event.target.value as "anthropic" | "openai" }))
-                  }
-                >
-                  <option value="anthropic">Anthropic Messages</option>
-                  <option value="openai">OpenAI Chat</option>
-                </select>
-              </label>
-              <label>
-                温度
-                <input
-                  type="number"
-                  min="0"
-                  max="2"
-                  step="0.1"
-                  value={settings.temperature}
-                  onChange={(event) => setSettings((current) => ({ ...current, temperature: Number(event.target.value) }))}
-                />
-              </label>
-            </div>
-
-            <div className="route-note">
-              模型由 cc-switch 全局路由决定；本应用只选择请求协议。
-            </div>
-
-            <label>
-              API Key
-              <input
-                type="password"
-                value={settings.apiKey}
-                onChange={(event) => setSettings((current) => ({ ...current, apiKey: event.target.value }))}
-                placeholder="可留空"
-              />
-            </label>
-
-            <label>
-              主题
-              <div className="theme-row">
-                <input
-                  value={settings.theme}
-                  onChange={(event) => setSettings((current) => ({ ...current, theme: event.target.value }))}
-                  placeholder="留空则掷骰"
-                />
-                <button type="button" className="icon-button" onClick={rollTheme} title="掷骰">
-                  ⚂
-                </button>
-              </div>
-            </label>
-
-            <div className="field-row chars">
-              <label>
-                第 1 字
-                <input
-                  maxLength={4}
-                  value={settings.firstChar}
-                  onChange={(event) => setSettings((current) => ({ ...current, firstChar: asSingleGlyph(event.target.value) }))}
-                />
-              </label>
-              <label>
-                第 2 字
-                <input
-                  maxLength={4}
-                  value={settings.secondChar}
-                  onChange={(event) => setSettings((current) => ({ ...current, secondChar: asSingleGlyph(event.target.value) }))}
-                />
-              </label>
-              <label>
-                第 3 字
-                <input
-                  maxLength={4}
-                  value={settings.thirdChar}
-                  onChange={(event) => setSettings((current) => ({ ...current, thirdChar: asSingleGlyph(event.target.value) }))}
-                />
-              </label>
-            </div>
-
-            <div className="field-row">
-              <label>
-                轮数
-                <input
-                  type="number"
-                  min="1"
-                  max="200"
-                  value={settings.maxRounds}
-                  onChange={(event) => setSettings((current) => ({ ...current, maxRounds: Number(event.target.value) }))}
-                />
-              </label>
-              <label>
-                间隔 ms
-                <input
-                  type="number"
-                  min="250"
-                  max="30000"
-                  step="250"
-                  value={settings.intervalMs}
-                  onChange={(event) => setSettings((current) => ({ ...current, intervalMs: Number(event.target.value) }))}
-                />
-              </label>
-            </div>
-
             <div className="actions">
               <button type="submit" disabled={running}>
                 启动
               </button>
               <button type="button" className="secondary" onClick={stop} disabled={!running}>
-                停止
+                暂停
+              </button>
+              <button type="button" className="settings-button" onClick={() => setSettingsOpen((current) => !current)}>
+                设置
               </button>
             </div>
+
+            {settingsOpen ? (
+              <div className="settings-drawer">
+                <label>
+                  cc-switch
+                  <input
+                    value={settings.baseUrl}
+                    onChange={(event) => setSettings((current) => ({ ...current, baseUrl: event.target.value }))}
+                  />
+                </label>
+
+                <div className="field-row">
+                  <label>
+                    协议
+                    <select
+                      value={settings.protocol}
+                      onChange={(event) =>
+                        setSettings((current) => ({ ...current, protocol: event.target.value as "anthropic" | "openai" }))
+                      }
+                    >
+                      <option value="anthropic">Anthropic Messages</option>
+                      <option value="openai">OpenAI Chat</option>
+                    </select>
+                  </label>
+                  <label>
+                    温度
+                    <input
+                      type="number"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={settings.temperature}
+                      onChange={(event) => setSettings((current) => ({ ...current, temperature: Number(event.target.value) }))}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  API Key
+                  <input
+                    type="password"
+                    value={settings.apiKey}
+                    onChange={(event) => setSettings((current) => ({ ...current, apiKey: event.target.value }))}
+                    placeholder="可留空"
+                  />
+                </label>
+
+                <label>
+                  主题
+                  <div className="theme-row">
+                    <input
+                      value={settings.theme}
+                      onChange={(event) => setSettings((current) => ({ ...current, theme: event.target.value }))}
+                      placeholder="留空则掷骰"
+                    />
+                    <button type="button" className="icon-button" onClick={rollTheme} title="掷骰">
+                      ⚂
+                    </button>
+                  </div>
+                </label>
+
+                <div className="field-row chars">
+                  <label>
+                    第 1 字
+                    <input
+                      maxLength={4}
+                      value={settings.firstChar}
+                      onChange={(event) => setSettings((current) => ({ ...current, firstChar: asSingleGlyph(event.target.value) }))}
+                    />
+                  </label>
+                  <label>
+                    第 2 字
+                    <input
+                      maxLength={4}
+                      value={settings.secondChar}
+                      onChange={(event) => setSettings((current) => ({ ...current, secondChar: asSingleGlyph(event.target.value) }))}
+                    />
+                  </label>
+                  <label>
+                    第 3 字
+                    <input
+                      maxLength={4}
+                      value={settings.thirdChar}
+                      onChange={(event) => setSettings((current) => ({ ...current, thirdChar: asSingleGlyph(event.target.value) }))}
+                    />
+                  </label>
+                </div>
+
+                <div className="field-row">
+                  <label>
+                    轮数
+                    <input
+                      type="number"
+                      min="1"
+                      max="200"
+                      value={settings.maxRounds}
+                      onChange={(event) => setSettings((current) => ({ ...current, maxRounds: Number(event.target.value) }))}
+                    />
+                  </label>
+                  <label>
+                    间隔 ms
+                    <input
+                      type="number"
+                      min="250"
+                      max="30000"
+                      step="250"
+                      value={settings.intervalMs}
+                      onChange={(event) => setSettings((current) => ({ ...current, intervalMs: Number(event.target.value) }))}
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : null}
           </form>
 
           <section className="panel meters" aria-label="Metrics">
             <div className="meter">
-              <span>约束</span>
-              <strong>{constraintPreview}</strong>
+              <span>首字</span>
+              <strong>{firstCharsPreview}</strong>
             </div>
             <div className="meter">
               <span>Tokens</span>
               <strong>{metrics.totalTokens.toLocaleString()}</strong>
             </div>
             <div className="meter">
-              <span>估算 $</span>
-              <strong>{metrics.totalEstimatedCost.toFixed(6)}</strong>
-            </div>
-            <div className="meter">
-              <span>荒诞</span>
-              <strong>{metrics.absurdity}%</strong>
+              <span>调用</span>
+              <strong>{metrics.callCount}</strong>
             </div>
           </section>
 
-          <section className="panel stream" aria-label="Poem stream">
+          <section className="bookcase" aria-label="Poetry collection">
             {error ? <div className="error">{error}</div> : null}
-            {rounds.length === 0 && !error ? <div className="empty">等待第一首诗落地。</div> : null}
-            {rounds
-              .slice()
-              .reverse()
-              .map((round) => (
-                <article className="poem" key={`${round.runId}-${round.round}`}>
-                  <header>
-                    <span>#{round.round}</span>
-                    <span>{round.routedModel ? `cc-switch: ${round.routedModel}` : `${round.completionTokens} completion tokens`}</span>
-                  </header>
-                  <pre>{round.poem}</pre>
-                </article>
-              ))}
+            <div className="book">
+              <div className="book-spine" />
+              <article className={`book-page page-turn-${pageTurnKey % 2}`} key={currentPage ? `${currentPage.runId}-${currentPage.round}` : "empty"}>
+                {currentPage ? (
+                  <>
+                    <header>
+                      <span>诗集 · {currentPage.round}</span>
+                      <span>{currentPage.routedModel ? currentPage.routedModel : `${currentPage.completionTokens} tokens`}</span>
+                    </header>
+                    <pre>{currentPage.poem}</pre>
+                  </>
+                ) : (
+                  <div className="empty-book">
+                    <span>诗集</span>
+                    <strong>等待开篇</strong>
+                  </div>
+                )}
+              </article>
+            </div>
+            {rounds.length > 1 ? (
+              <div className="page-controls">
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setPageIndex((current) => Math.max(0, current - 1));
+                    setPageTurnKey((current) => current + 1);
+                  }}
+                  disabled={pageIndex === 0}
+                >
+                  上一页
+                </button>
+                <span>
+                  {pageIndex + 1} / {rounds.length}
+                </span>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    setPageIndex((current) => Math.min(rounds.length - 1, current + 1));
+                    setPageTurnKey((current) => current + 1);
+                  }}
+                  disabled={pageIndex >= rounds.length - 1}
+                >
+                  下一页
+                </button>
+              </div>
+            ) : null}
           </section>
         </div>
       </section>
