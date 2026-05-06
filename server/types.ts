@@ -26,6 +26,7 @@ export type ResolvedPoemRun = Required<
 
 export type PoemRound = {
   type: "round";
+  id?: number;
   runId: string;
   round: number;
   poem: string;
@@ -35,6 +36,23 @@ export type PoemRound = {
   totalEstimatedCost: number;
   absurdity: number;
   routedModel?: string;
+};
+
+export type PoemRecord = {
+  id: number;
+  runId: string;
+  round: number;
+  theme: string;
+  firstChar: string;
+  secondChar: string;
+  thirdChar: string;
+  poem: string;
+  routedModel?: string | null;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  protocol: AiProtocol;
+  createdAt: string;
 };
 
 export type RunStatus = "starting" | "running" | "stopped" | "done" | "error";

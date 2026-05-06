@@ -39,6 +39,8 @@ npm run dev
 
 The default AI adapter uses the Anthropic Messages shape, `POST /messages`, because cc-switch can handle model routing behind that protocol. The app still sends a required model hint, but the user-facing choice is the protocol, not a concrete model. OpenAI-compatible `POST /chat/completions` is available as a fallback protocol.
 
+Generated poems are stored locally in SQLite at `data/infinite-monkey.sqlite` by default. Override the path with `SQLITE_PATH` if you want to keep the collection elsewhere.
+
 ## License
 
 MIT

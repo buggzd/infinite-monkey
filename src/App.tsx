@@ -15,6 +15,7 @@ type RunConfig = {
 
 type PoemRound = {
   type: "round";
+  id?: number;
   runId: string;
   round: number;
   poem: string;
@@ -24,6 +25,29 @@ type PoemRound = {
   totalEstimatedCost: number;
   absurdity: number;
   routedModel?: string;
+};
+
+type StoredPoem = {
+  id: number;
+  runId: string;
+  round: number;
+  theme: string;
+  firstChar: string;
+  secondChar: string;
+  thirdChar: string;
+  poem: string;
+  routedModel?: string | null;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  protocol: "anthropic" | "openai";
+  createdAt: string;
+};
+
+type LibraryStats = {
+  poemCount: number;
+  totalTokens: number;
+  completionTokens: number;
 };
 
 type PoemEvent =
@@ -84,15 +108,29 @@ function friendlyError(message: string) {
   return message;
 }
 
+function formatDate(value?: string) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
 export function App() {
   const [settings, setSettings] = useState(defaultSettings);
   const [rounds, setRounds] = useState<PoemRound[]>([]);
+  const [libraryPoems, setLibraryPoems] = useState<StoredPoem[]>([]);
+  const [libraryStats, setLibraryStats] = useState<LibraryStats>({ poemCount: 0, totalTokens: 0, completionTokens: 0 });
   const [status, setStatus] = useState("idle");
   const [runId, setRunId] = useState("");
   const [activeConfig, setActiveConfig] = useState<RunConfig | null>(null);
   const [error, setError] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [view, setView] = useState<"studio" | "library">("studio");
   const [pageIndex, setPageIndex] = useState(0);
+  const [libraryIndex, setLibraryIndex] = useState(0);
   const [pageTurnKey, setPageTurnKey] = useState(0);
   const eventSourceRef = useRef<EventSource | null>(null);
 
@@ -104,6 +142,7 @@ export function App() {
   }, [latestRound]);
 
   useEffect(() => {
+    void loadLibrary();
     return () => {
       eventSourceRef.current?.close();
     };
@@ -120,6 +159,15 @@ export function App() {
     const response = await fetch("/api/theme/roll");
     const data = (await response.json()) as { theme: string };
     setSettings((current) => ({ ...current, theme: data.theme }));
+  }
+
+  async function loadLibrary() {
+    const [libraryResponse, statsResponse] = await Promise.all([fetch("/api/library?limit=120"), fetch("/api/library/stats")]);
+    const libraryData = (await libraryResponse.json()) as { poems: StoredPoem[]; total: number };
+    const statsData = (await statsResponse.json()) as LibraryStats;
+    setLibraryPoems(libraryData.poems);
+    setLibraryStats(statsData);
+    setLibraryIndex((current) => Math.min(current, Math.max(0, libraryData.poems.length - 1)));
   }
 
   async function start(event: FormEvent) {
@@ -165,6 +213,7 @@ export function App() {
       }
       if (payload.type === "round") {
         setRounds((current) => [...current, payload]);
+        void loadLibrary();
       }
       if (payload.type === "error") {
         setStatus("error");
@@ -192,6 +241,7 @@ export function App() {
       ? `${settings.firstChar || "?"}${settings.secondChar || "?"}${settings.thirdChar || "?"}`
       : "随机";
   const currentPage = rounds[pageIndex];
+  const libraryPage = libraryPoems[libraryIndex];
 
   return (
     <main className="shell">
@@ -208,200 +258,276 @@ export function App() {
           <div className={`status status-${status}`}>{statusText(status)}</div>
         </header>
 
+        <nav className="view-tabs" aria-label="Views">
+          <button type="button" className={view === "studio" ? "active" : ""} onClick={() => setView("studio")}>
+            生成
+          </button>
+          <button
+            type="button"
+            className={view === "library" ? "active" : ""}
+            onClick={() => {
+              setView("library");
+              void loadLibrary();
+            }}
+          >
+            诗集
+          </button>
+        </nav>
+
         <div className="dashboard">
-          <form className="panel controls" onSubmit={start}>
-            <div className="actions">
-              <button type="submit" disabled={running}>
-                启动
-              </button>
-              <button type="button" className="secondary" onClick={stop} disabled={!running}>
-                暂停
-              </button>
-              <button type="button" className="settings-button" onClick={() => setSettingsOpen((current) => !current)}>
-                设置
-              </button>
-            </div>
-
-            {settingsOpen ? (
-              <div className="settings-drawer">
-                <label>
-                  cc-switch
-                  <input
-                    value={settings.baseUrl}
-                    onChange={(event) => setSettings((current) => ({ ...current, baseUrl: event.target.value }))}
-                  />
-                </label>
-
-                <div className="field-row">
-                  <label>
-                    协议
-                    <select
-                      value={settings.protocol}
-                      onChange={(event) =>
-                        setSettings((current) => ({ ...current, protocol: event.target.value as "anthropic" | "openai" }))
-                      }
-                    >
-                      <option value="anthropic">Anthropic Messages</option>
-                      <option value="openai">OpenAI Chat</option>
-                    </select>
-                  </label>
-                  <label>
-                    温度
-                    <input
-                      type="number"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      value={settings.temperature}
-                      onChange={(event) => setSettings((current) => ({ ...current, temperature: Number(event.target.value) }))}
-                    />
-                  </label>
-                </div>
-
-                <label>
-                  API Key
-                  <input
-                    type="password"
-                    value={settings.apiKey}
-                    onChange={(event) => setSettings((current) => ({ ...current, apiKey: event.target.value }))}
-                    placeholder="可留空"
-                  />
-                </label>
-
-                <label>
-                  主题
-                  <div className="theme-row">
-                    <input
-                      value={settings.theme}
-                      onChange={(event) => setSettings((current) => ({ ...current, theme: event.target.value }))}
-                      placeholder="留空则掷骰"
-                    />
-                    <button type="button" className="icon-button" onClick={rollTheme} title="掷骰">
-                      ⚂
-                    </button>
-                  </div>
-                </label>
-
-                <div className="field-row chars">
-                  <label>
-                    第 1 字
-                    <input
-                      maxLength={4}
-                      value={settings.firstChar}
-                      onChange={(event) => setSettings((current) => ({ ...current, firstChar: asSingleGlyph(event.target.value) }))}
-                    />
-                  </label>
-                  <label>
-                    第 2 字
-                    <input
-                      maxLength={4}
-                      value={settings.secondChar}
-                      onChange={(event) => setSettings((current) => ({ ...current, secondChar: asSingleGlyph(event.target.value) }))}
-                    />
-                  </label>
-                  <label>
-                    第 3 字
-                    <input
-                      maxLength={4}
-                      value={settings.thirdChar}
-                      onChange={(event) => setSettings((current) => ({ ...current, thirdChar: asSingleGlyph(event.target.value) }))}
-                    />
-                  </label>
-                </div>
-
-                <div className="field-row">
-                  <label>
-                    轮数
-                    <input
-                      type="number"
-                      min="1"
-                      max="200"
-                      value={settings.maxRounds}
-                      onChange={(event) => setSettings((current) => ({ ...current, maxRounds: Number(event.target.value) }))}
-                    />
-                  </label>
-                  <label>
-                    间隔 ms
-                    <input
-                      type="number"
-                      min="250"
-                      max="30000"
-                      step="250"
-                      value={settings.intervalMs}
-                      onChange={(event) => setSettings((current) => ({ ...current, intervalMs: Number(event.target.value) }))}
-                    />
-                  </label>
-                </div>
+          <section className="left-rail">
+            <form className="panel controls" onSubmit={start}>
+              <div className="actions">
+                <button type="submit" disabled={running}>
+                  启动
+                </button>
+                <button type="button" className="secondary" onClick={stop} disabled={!running}>
+                  暂停
+                </button>
+                <button type="button" className="settings-button" onClick={() => setSettingsOpen((current) => !current)}>
+                  设置
+                </button>
               </div>
-            ) : null}
-          </form>
 
-          <section className="panel meters" aria-label="Metrics">
-            <div className="meter">
-              <span>首字</span>
-              <strong>{firstCharsPreview}</strong>
-            </div>
-            <div className="meter">
-              <span>Tokens</span>
-              <strong>{metrics.totalTokens.toLocaleString()}</strong>
-            </div>
-            <div className="meter">
-              <span>调用</span>
-              <strong>{metrics.callCount}</strong>
-            </div>
+              {settingsOpen ? (
+                <div className="settings-drawer">
+                  <label>
+                    cc-switch
+                    <input
+                      value={settings.baseUrl}
+                      onChange={(event) => setSettings((current) => ({ ...current, baseUrl: event.target.value }))}
+                    />
+                  </label>
+
+                  <div className="field-row">
+                    <label>
+                      协议
+                      <select
+                        value={settings.protocol}
+                        onChange={(event) =>
+                          setSettings((current) => ({ ...current, protocol: event.target.value as "anthropic" | "openai" }))
+                        }
+                      >
+                        <option value="anthropic">Anthropic Messages</option>
+                        <option value="openai">OpenAI Chat</option>
+                      </select>
+                    </label>
+                    <label>
+                      温度
+                      <input
+                        type="number"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        value={settings.temperature}
+                        onChange={(event) => setSettings((current) => ({ ...current, temperature: Number(event.target.value) }))}
+                      />
+                    </label>
+                  </div>
+
+                  <label>
+                    API Key
+                    <input
+                      type="password"
+                      value={settings.apiKey}
+                      onChange={(event) => setSettings((current) => ({ ...current, apiKey: event.target.value }))}
+                      placeholder="可留空"
+                    />
+                  </label>
+
+                  <label>
+                    主题
+                    <div className="theme-row">
+                      <input
+                        value={settings.theme}
+                        onChange={(event) => setSettings((current) => ({ ...current, theme: event.target.value }))}
+                        placeholder="留空则掷骰"
+                      />
+                      <button type="button" className="icon-button" onClick={rollTheme} title="掷骰">
+                        ⚂
+                      </button>
+                    </div>
+                  </label>
+
+                  <div className="field-row chars">
+                    <label>
+                      第 1 字
+                      <input
+                        maxLength={4}
+                        value={settings.firstChar}
+                        onChange={(event) => setSettings((current) => ({ ...current, firstChar: asSingleGlyph(event.target.value) }))}
+                      />
+                    </label>
+                    <label>
+                      第 2 字
+                      <input
+                        maxLength={4}
+                        value={settings.secondChar}
+                        onChange={(event) => setSettings((current) => ({ ...current, secondChar: asSingleGlyph(event.target.value) }))}
+                      />
+                    </label>
+                    <label>
+                      第 3 字
+                      <input
+                        maxLength={4}
+                        value={settings.thirdChar}
+                        onChange={(event) => setSettings((current) => ({ ...current, thirdChar: asSingleGlyph(event.target.value) }))}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="field-row">
+                    <label>
+                      轮数
+                      <input
+                        type="number"
+                        min="1"
+                        max="200"
+                        value={settings.maxRounds}
+                        onChange={(event) => setSettings((current) => ({ ...current, maxRounds: Number(event.target.value) }))}
+                      />
+                    </label>
+                    <label>
+                      间隔 ms
+                      <input
+                        type="number"
+                        min="250"
+                        max="30000"
+                        step="250"
+                        value={settings.intervalMs}
+                        onChange={(event) => setSettings((current) => ({ ...current, intervalMs: Number(event.target.value) }))}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ) : null}
+            </form>
+
+            <section className="panel meters" aria-label="Metrics">
+              <div className="meter">
+                <span>首字</span>
+                <strong>{firstCharsPreview}</strong>
+              </div>
+              <div className="meter">
+                <span>本轮 Tokens</span>
+                <strong>{metrics.totalTokens.toLocaleString()}</strong>
+              </div>
+              <div className="meter">
+                <span>本轮调用</span>
+                <strong>{metrics.callCount}</strong>
+              </div>
+            </section>
+
+            <section className="panel library-stats" aria-label="Library stats">
+              <div>
+                <span>库存诗篇</span>
+                <strong>{libraryStats.poemCount}</strong>
+              </div>
+              <div>
+                <span>累计 Tokens</span>
+                <strong>{libraryStats.totalTokens.toLocaleString()}</strong>
+              </div>
+            </section>
           </section>
 
-          <section className="bookcase" aria-label="Poetry collection">
-            {error ? <div className="error">{error}</div> : null}
-            <div className="book">
-              <div className="book-spine" />
-              <article className={`book-page page-turn-${pageTurnKey % 2}`} key={currentPage ? `${currentPage.runId}-${currentPage.round}` : "empty"}>
-                {currentPage ? (
-                  <>
-                    <header>
-                      <span>诗集 · {currentPage.round}</span>
-                      <span>{currentPage.routedModel ? currentPage.routedModel : `${currentPage.completionTokens} tokens`}</span>
-                    </header>
-                    <pre>{currentPage.poem}</pre>
-                  </>
+          {view === "studio" ? (
+            <section className="bookcase" aria-label="Poetry collection">
+              {error ? <div className="error">{error}</div> : null}
+              <div className="book">
+                <div className="book-spine" />
+                <article className={`book-page page-turn-${pageTurnKey % 2}`} key={currentPage ? `${currentPage.runId}-${currentPage.round}` : "empty"}>
+                  {currentPage ? (
+                    <>
+                      <header>
+                        <span>本轮 · {currentPage.round}</span>
+                        <span>{currentPage.routedModel ? currentPage.routedModel : `${currentPage.completionTokens} tokens`}</span>
+                      </header>
+                      <pre>{currentPage.poem}</pre>
+                    </>
+                  ) : (
+                    <div className="empty-book">
+                      <span>诗集</span>
+                      <strong>等待开篇</strong>
+                    </div>
+                  )}
+                </article>
+              </div>
+              {rounds.length > 1 ? (
+                <div className="page-controls">
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setPageIndex((current) => Math.max(0, current - 1));
+                      setPageTurnKey((current) => current + 1);
+                    }}
+                    disabled={pageIndex === 0}
+                  >
+                    上一页
+                  </button>
+                  <span>
+                    {pageIndex + 1} / {rounds.length}
+                  </span>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setPageIndex((current) => Math.min(rounds.length - 1, current + 1));
+                      setPageTurnKey((current) => current + 1);
+                    }}
+                    disabled={pageIndex >= rounds.length - 1}
+                  >
+                    下一页
+                  </button>
+                </div>
+              ) : null}
+            </section>
+          ) : (
+            <section className="library-browser" aria-label="Stored poetry library">
+              <div className="library-list">
+                {libraryPoems.length === 0 ? (
+                  <div className="library-empty">还没有馆藏。</div>
                 ) : (
-                  <div className="empty-book">
-                    <span>诗集</span>
-                    <strong>等待开篇</strong>
-                  </div>
+                  libraryPoems.map((poem, index) => (
+                    <button
+                      type="button"
+                      className={index === libraryIndex ? "library-item active" : "library-item"}
+                      key={poem.id}
+                      onClick={() => {
+                        setLibraryIndex(index);
+                        setPageTurnKey((current) => current + 1);
+                      }}
+                    >
+                      <span>{poem.firstChar}{poem.secondChar}{poem.thirdChar}</span>
+                      <strong>{poem.theme}</strong>
+                      <em>{formatDate(poem.createdAt)}</em>
+                    </button>
+                  ))
                 )}
-              </article>
-            </div>
-            {rounds.length > 1 ? (
-              <div className="page-controls">
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    setPageIndex((current) => Math.max(0, current - 1));
-                    setPageTurnKey((current) => current + 1);
-                  }}
-                  disabled={pageIndex === 0}
-                >
-                  上一页
-                </button>
-                <span>
-                  {pageIndex + 1} / {rounds.length}
-                </span>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    setPageIndex((current) => Math.min(rounds.length - 1, current + 1));
-                    setPageTurnKey((current) => current + 1);
-                  }}
-                  disabled={pageIndex >= rounds.length - 1}
-                >
-                  下一页
-                </button>
               </div>
-            ) : null}
-          </section>
+
+              <div className="book library-book">
+                <div className="book-spine" />
+                <article className={`book-page page-turn-${pageTurnKey % 2}`} key={libraryPage ? libraryPage.id : "library-empty"}>
+                  {libraryPage ? (
+                    <>
+                      <header>
+                        <span>馆藏 · {libraryPage.firstChar}{libraryPage.secondChar}{libraryPage.thirdChar}</span>
+                        <span>{libraryPage.routedModel || libraryPage.protocol}</span>
+                      </header>
+                      <p className="page-theme">{libraryPage.theme}</p>
+                      <pre>{libraryPage.poem}</pre>
+                    </>
+                  ) : (
+                    <div className="empty-book">
+                      <span>诗集</span>
+                      <strong>暂无馆藏</strong>
+                    </div>
+                  )}
+                </article>
+              </div>
+            </section>
+          )}
         </div>
       </section>
     </main>

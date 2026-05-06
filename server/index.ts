@@ -4,6 +4,7 @@ import { z } from "zod";
 import { serverConfig } from "./config.js";
 import { attachClient, startRun, stopRun } from "./engine.js";
 import { rollTheme } from "./random.js";
+import { getDatabasePath, getLibraryStats, listPoems } from "./storage.js";
 
 const app = Fastify({ logger: true });
 
@@ -29,12 +30,26 @@ app.get("/api/health", async () => ({
   ok: true,
   ccSwitchBaseUrl: serverConfig.ccSwitchBaseUrl,
   defaultProtocol: serverConfig.defaultProtocol,
-  modelHint: serverConfig.modelHint
+  modelHint: serverConfig.modelHint,
+  databasePath: getDatabasePath()
 }));
 
 app.get("/api/theme/roll", async () => ({
   theme: rollTheme()
 }));
+
+app.get("/api/library", async (request) => {
+  const query = z
+    .object({
+      limit: z.coerce.number().int().min(1).max(200).default(80),
+      offset: z.coerce.number().int().min(0).default(0)
+    })
+    .parse(request.query);
+
+  return listPoems(query.limit, query.offset);
+});
+
+app.get("/api/library/stats", async () => getLibraryStats());
 
 app.post("/api/poem/start", async (request, reply) => {
   const parsed = startSchema.safeParse(request.body ?? {});

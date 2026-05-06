@@ -3,6 +3,7 @@ import type { ServerResponse } from "node:http";
 import { createCompletion } from "./ai.js";
 import { serverConfig } from "./config.js";
 import { buildPrompt, resolveRun } from "./prompt.js";
+import { savePoem } from "./storage.js";
 import type { PoemEvent, PoemStartInput, ResolvedPoemRun, RunStatus } from "./types.js";
 
 type Client = ServerResponse;
@@ -75,8 +76,19 @@ async function runLoop(run: RunState) {
 
       run.totalTokens += result.totalTokens;
       run.totalEstimatedCost = calcCost(run.totalTokens);
+      const poemId = savePoem({
+        runId: run.id,
+        round,
+        config: run.config,
+        poem: result.text,
+        routedModel: result.routedModel,
+        promptTokens: result.promptTokens,
+        completionTokens: result.completionTokens,
+        totalTokens: result.totalTokens
+      });
       broadcast(run, {
         type: "round",
+        id: poemId,
         runId: run.id,
         round,
         poem: result.text,
