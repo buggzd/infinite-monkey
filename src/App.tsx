@@ -1,6 +1,7 @@
 import { type FormEvent, type WheelEvent, useEffect, useMemo, useRef, useState } from "react";
 import { layoutWithLines, prepareWithSegments } from "@chenglou/pretext";
 import * as THREE from "three";
+import crtConfig from "./crt_config.json";
 
 type RunConfig = {
   baseUrl: string;
@@ -566,16 +567,7 @@ export function App() {
   const [view, setView] = useState<"studio" | "library">("studio");
   const [libraryIndex, setLibraryIndex] = useState(0);
   const eventSourceRef = useRef<EventSource | null>(null);
-  const [tilt, setTilt] = useState({ 
-    perspective: 1400, translateX: 7, translateY: 9, scale: 1.14, 
-    rotateX: 18, rotateY: 17, rotateZ: -3,
-    // OpenCV Calib3d Fisheye Coefficients
-    k1: -0.02, k2: 0.02, k3: 0.06, k4: -0.01, deadZone: 0.15,
-    // Lens Post Processing
-    lensRadius: 0, lensGlare: 0.06, lensGlareSize: 54, lensVignette: 0.55, lensShadow: 33,
-    // CRT Scanlines
-    scanline: 0.08, roll: 0.05, scanlineCount: 1200
-  });
+  const [tilt, setTilt] = useState(crtConfig);
   const [showDebugger, setShowDebugger] = useState(false);
 
   useEffect(() => {
