@@ -399,6 +399,10 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
       uniform float k3;
       uniform float k4;
       uniform float deadZone;
+      uniform float time;
+      uniform float scanlineIntensity;
+      uniform float rollIntensity;
+      uniform float scanlineCount;
       
       void main() {
         // Normalize to -1..1
@@ -421,7 +425,17 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
         if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
           gl_FragColor = vec4(0.0);
         } else {
-          gl_FragColor = texture2D(tDiffuse, uv);
+          vec4 color = texture2D(tDiffuse, uv);
+          
+          // CRT 扫描线 (基于未畸变的 uv，从而让扫描线跟随屏幕一起弯曲)
+          // 高频细小扫描线
+          float scanline = sin(uv.y * scanlineCount) * scanlineIntensity; 
+          // 低频慢速滚动条带
+          float roll = sin(uv.y * 6.0 - time * 3.0) * rollIntensity;
+          
+          color.rgb *= (1.0 - scanline - roll);
+          
+          gl_FragColor = color;
         }
       }
     `;
@@ -433,7 +447,11 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
         k2: { value: tilt.k2 || 0 },
         k3: { value: tilt.k3 || 0 },
         k4: { value: tilt.k4 || 0 },
-        deadZone: { value: tilt.deadZone || 0 }
+        deadZone: { value: tilt.deadZone || 0 },
+        time: { value: 0 },
+        scanlineIntensity: { value: tilt.scanline || 0 },
+        rollIntensity: { value: tilt.roll || 0 },
+        scanlineCount: { value: tilt.scanlineCount || 1200 }
       },
       vertexShader,
       fragmentShader,
@@ -447,6 +465,7 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
 
     let animationFrameId: number;
     const renderScene = () => {
+      material.uniforms.time.value += 0.016;
       renderer.render(scene, camera);
       animationFrameId = requestAnimationFrame(renderScene);
     };
@@ -471,8 +490,11 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
       materialRef.current.uniforms.k3.value = tilt.k3;
       materialRef.current.uniforms.k4.value = tilt.k4;
       materialRef.current.uniforms.deadZone.value = tilt.deadZone;
+      materialRef.current.uniforms.scanlineIntensity.value = tilt.scanline;
+      materialRef.current.uniforms.rollIntensity.value = tilt.roll;
+      materialRef.current.uniforms.scanlineCount.value = tilt.scanlineCount;
     }
-  }, [tilt.k1, tilt.k2, tilt.k3, tilt.k4, tilt.deadZone]);
+  }, [tilt.k1, tilt.k2, tilt.k3, tilt.k4, tilt.deadZone, tilt.scanline, tilt.roll, tilt.scanlineCount]);
 
   useEffect(() => {
     const canvas = canvas2dRef.current;
@@ -550,7 +572,9 @@ export function App() {
     // OpenCV Calib3d Fisheye Coefficients
     k1: -0.02, k2: 0.02, k3: 0.06, k4: -0.01, deadZone: 0.15,
     // Lens Post Processing
-    lensRadius: 0, lensGlare: 0.06, lensGlareSize: 54, lensVignette: 0.55, lensShadow: 33
+    lensRadius: 0, lensGlare: 0.06, lensGlareSize: 54, lensVignette: 0.55, lensShadow: 33,
+    // CRT Scanlines
+    scanline: 0.08, roll: 0.05, scanlineCount: 1200
   });
   const [showDebugger, setShowDebugger] = useState(false);
 
@@ -891,57 +915,98 @@ export function App() {
           <span>CRT TEXT TILT DEBUGGER</span>
           <button type="button" style={{padding: '2px 8px', fontSize: '10px', minWidth: 'auto', margin: 0, height: 'auto', lineHeight: 1}} onClick={() => navigator.clipboard.writeText(JSON.stringify(tilt, null, 2)).then(() => alert('Copied!'))}>COPY</button>
         </strong>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Perspective
-          <input type="range" min="100" max="3000" step="50" value={tilt.perspective} onChange={e => setTilt(t => ({...t, perspective: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.perspective}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Translate X
-          <input type="range" min="-500" max="500" value={tilt.translateX} onChange={e => setTilt(t => ({...t, translateX: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.translateX}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Translate Y
-          <input type="range" min="-500" max="500" value={tilt.translateY} onChange={e => setTilt(t => ({...t, translateY: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.translateY}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Scale
-          <input type="range" min="0.5" max="2" step="0.01" value={tilt.scale} onChange={e => setTilt(t => ({...t, scale: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.scale.toFixed(2)}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Rotate X
-          <input type="range" min="-90" max="90" value={tilt.rotateX} onChange={e => setTilt(t => ({...t, rotateX: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.rotateX}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Rotate Y
-          <input type="range" min="-90" max="90" value={tilt.rotateY} onChange={e => setTilt(t => ({...t, rotateY: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.rotateY}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Rotate Z
-          <input type="range" min="-90" max="90" value={tilt.rotateZ} onChange={e => setTilt(t => ({...t, rotateZ: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.rotateZ}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>OpenCV K1
-          <input type="range" min="-1" max="1" step="0.01" value={tilt.k1} onChange={e => setTilt(t => ({...t, k1: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k1.toFixed(2)}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>OpenCV K2
-          <input type="range" min="-1" max="1" step="0.01" value={tilt.k2} onChange={e => setTilt(t => ({...t, k2: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k2.toFixed(2)}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>OpenCV K3
-          <input type="range" min="-1" max="1" step="0.01" value={tilt.k3} onChange={e => setTilt(t => ({...t, k3: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k3.toFixed(2)}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>OpenCV K4
-          <input type="range" min="-1" max="1" step="0.01" value={tilt.k4} onChange={e => setTilt(t => ({...t, k4: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k4.toFixed(2)}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Dead Zone
-          <input type="range" min="0" max="1" step="0.05" value={tilt.deadZone} onChange={e => setTilt(t => ({...t, deadZone: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.deadZone.toFixed(2)}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Lens Glare
-          <input type="range" min="0" max="0.5" step="0.01" value={tilt.lensGlare} onChange={e => setTilt(t => ({...t, lensGlare: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensGlare.toFixed(2)}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Glare Size
-          <input type="range" min="0" max="80" step="1" value={tilt.lensGlareSize} onChange={e => setTilt(t => ({...t, lensGlareSize: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensGlareSize}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Vignette
-          <input type="range" min="0" max="1" step="0.05" value={tilt.lensVignette} onChange={e => setTilt(t => ({...t, lensVignette: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensVignette.toFixed(2)}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Inner Shadow
-          <input type="range" min="0" max="100" step="1" value={tilt.lensShadow} onChange={e => setTilt(t => ({...t, lensShadow: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensShadow}</span>
-        </label>
-        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Corner Radius
-          <input type="range" min="0" max="50" step="1" value={tilt.lensRadius} onChange={e => setTilt(t => ({...t, lensRadius: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensRadius}%</span>
-        </label>
+        <style>
+          {`
+            details summary { cursor: pointer; user-select: none; padding: 5px 0; font-weight: bold; border-bottom: 1px dashed rgba(0,255,102,0.3); outline: none; }
+            details summary:hover { color: #fff; }
+            details > div { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 10px 10px; margin-bottom: 5px; border-left: 2px solid rgba(0,255,102,0.2); background: rgba(0,255,102,0.02); }
+          `}
+        </style>
+
+        <details open>
+          <summary>📺 CRT WebGL Shader</summary>
+          <div>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Scanline Intensity
+              <input type="range" min="0" max="0.3" step="0.01" value={tilt.scanline} onChange={e => setTilt(t => ({...t, scanline: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.scanline.toFixed(2)}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Scanline Density
+              <input type="range" min="200" max="3000" step="50" value={tilt.scanlineCount} onChange={e => setTilt(t => ({...t, scanlineCount: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.scanlineCount}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Roll Sync Pulse
+              <input type="range" min="0" max="0.3" step="0.01" value={tilt.roll} onChange={e => setTilt(t => ({...t, roll: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.roll.toFixed(2)}</span>
+            </label>
+          </div>
+        </details>
+
+        <details>
+          <summary>👁️ OpenCV Fisheye Distortion</summary>
+          <div>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>K1 (Radial 2nd)
+              <input type="range" min="-1" max="1" step="0.01" value={tilt.k1} onChange={e => setTilt(t => ({...t, k1: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k1.toFixed(2)}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>K2 (Radial 4th)
+              <input type="range" min="-1" max="1" step="0.01" value={tilt.k2} onChange={e => setTilt(t => ({...t, k2: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k2.toFixed(2)}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>K3 (Radial 6th)
+              <input type="range" min="-1" max="1" step="0.01" value={tilt.k3} onChange={e => setTilt(t => ({...t, k3: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k3.toFixed(2)}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>K4 (Radial 8th)
+              <input type="range" min="-1" max="1" step="0.01" value={tilt.k4} onChange={e => setTilt(t => ({...t, k4: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k4.toFixed(2)}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Center Dead Zone
+              <input type="range" min="0" max="1" step="0.05" value={tilt.deadZone} onChange={e => setTilt(t => ({...t, deadZone: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.deadZone.toFixed(2)}</span>
+            </label>
+          </div>
+        </details>
+
+        <details>
+          <summary>💡 Glass Lens Post-Process</summary>
+          <div>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Lens Glare
+              <input type="range" min="0" max="0.5" step="0.01" value={tilt.lensGlare} onChange={e => setTilt(t => ({...t, lensGlare: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensGlare.toFixed(2)}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Glare Radius
+              <input type="range" min="0" max="80" step="1" value={tilt.lensGlareSize} onChange={e => setTilt(t => ({...t, lensGlareSize: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensGlareSize}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Edge Vignette
+              <input type="range" min="0" max="1" step="0.05" value={tilt.lensVignette} onChange={e => setTilt(t => ({...t, lensVignette: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensVignette.toFixed(2)}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Inner Shadow
+              <input type="range" min="0" max="100" step="1" value={tilt.lensShadow} onChange={e => setTilt(t => ({...t, lensShadow: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensShadow}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Corner Radius
+              <input type="range" min="0" max="50" step="1" value={tilt.lensRadius} onChange={e => setTilt(t => ({...t, lensRadius: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensRadius}%</span>
+            </label>
+          </div>
+        </details>
+
+        <details>
+          <summary>🖥️ CSS 3D Transform</summary>
+          <div>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Perspective
+              <input type="range" min="100" max="3000" step="50" value={tilt.perspective} onChange={e => setTilt(t => ({...t, perspective: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.perspective}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Translate X
+              <input type="range" min="-500" max="500" value={tilt.translateX} onChange={e => setTilt(t => ({...t, translateX: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.translateX}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Translate Y
+              <input type="range" min="-500" max="500" value={tilt.translateY} onChange={e => setTilt(t => ({...t, translateY: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.translateY}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Scale
+              <input type="range" min="0.5" max="2" step="0.01" value={tilt.scale} onChange={e => setTilt(t => ({...t, scale: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.scale.toFixed(2)}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Rotate X
+              <input type="range" min="-90" max="90" value={tilt.rotateX} onChange={e => setTilt(t => ({...t, rotateX: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.rotateX}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Rotate Y
+              <input type="range" min="-90" max="90" value={tilt.rotateY} onChange={e => setTilt(t => ({...t, rotateY: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.rotateY}</span>
+            </label>
+            <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Rotate Z
+              <input type="range" min="-90" max="90" value={tilt.rotateZ} onChange={e => setTilt(t => ({...t, rotateZ: +e.target.value}))} style={{width: '100px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.rotateZ}</span>
+            </label>
+          </div>
+        </details>
+
       </div>
       )}
     </div>
