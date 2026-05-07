@@ -263,9 +263,9 @@ button {
   background: transparent;
   color: var(--matrix-green);
   border: 1px solid var(--matrix-green);
-  padding: 12px 24px;
+  padding: 12px 14px;
   font-family: 'Courier New', Courier, monospace;
-  font-size: 16px;
+  font-size: 15px;
   text-transform: uppercase;
   cursor: pointer;
   transition: all 0.2s;
@@ -667,11 +667,11 @@ label {
   position: fixed;
   z-index: 5;
   display: grid;
-  grid-template-columns: 380px;
+  grid-template-columns: 460px;
   width: 1600px;
   height: 1066.6667px;
   gap: 0;
-  padding: 40px 0 34px 60px;
+  padding: 120px 0 34px 140px;
   overflow: hidden;
   transform: translate(-50%, -50%) scale(var(--stage-scale, 1));
   transform-origin: center center;
@@ -680,16 +680,18 @@ label {
 }
 
 .left-rail {
-  max-height: calc(1066.6667px - 80px);
+  max-height: calc(1066.6667px - 160px);
   overflow: auto;
-  padding-right: 10px;
+  padding-right: 16px;
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 255, 156, 0.5) transparent;
+  transform: perspective(1050px) translateX(-89px) translateY(115px) scale(1.36) rotateX(3deg) rotateY(18deg) rotateZ(0deg);
+  transform-origin: left center;
 }
 
 h1.glitch-text {
-  max-width: 480px;
-  font-size: 64px;
+  max-width: 580px;
+  font-size: 76px;
   letter-spacing: -0.01em;
   filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.3));
 }
@@ -709,7 +711,7 @@ h1.glitch-text {
 }
 
 .cyber-panel {
-  width: min(380px, 100%);
+  width: min(460px, 100%);
   border-color: rgba(0, 255, 156, 0.62);
   background: linear-gradient(180deg, rgba(0, 16, 14, 0.62), rgba(0, 4, 5, 0.32));
   box-shadow: inset 0 0 26px rgba(0, 255, 156, 0.13), 0 0 28px rgba(0, 0, 0, 0.34);
@@ -717,7 +719,8 @@ h1.glitch-text {
 
 .actions {
   display: grid;
-  grid-template-columns: 1fr 0.85fr 0.8fr;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 12px;
 }
 
 .library-list {

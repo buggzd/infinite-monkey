@@ -1,5 +1,6 @@
 import { type FormEvent, type WheelEvent, useEffect, useMemo, useRef, useState } from "react";
 import { layoutWithLines, prepareWithSegments } from "@chenglou/pretext";
+import * as THREE from "three";
 
 type RunConfig = {
   baseUrl: string;
@@ -331,6 +332,181 @@ function MatrixRain({ poems, variant }: { poems: StoredPoem[]; variant: RainVari
 
   return <canvas ref={canvasRef} className={`matrix-rain matrix-rain-${variant}`} aria-hidden="true" />;
 }
+const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) => {
+  const mountRef = useRef<HTMLDivElement>(null);
+  const canvas2dRef = useRef<HTMLCanvasElement>(null);
+  const textureRef = useRef<THREE.CanvasTexture | null>(null);
+  const materialRef = useRef<THREE.ShaderMaterial | null>(null);
+
+  useEffect(() => {
+    if (!mountRef.current) return;
+    
+    const canvas2d = document.createElement('canvas');
+    canvas2d.width = 1024;
+    canvas2d.height = 827; // Aspect ratio of the container (268.8 / 332.8)
+    canvas2dRef.current = canvas2d;
+    
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 1;
+    
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setSize(1024, 827); 
+    mountRef.current.appendChild(renderer.domElement);
+    renderer.domElement.style.position = 'absolute';
+    renderer.domElement.style.top = '0';
+    renderer.domElement.style.left = '0';
+    renderer.domElement.style.width = '100%';
+    renderer.domElement.style.height = '100%';
+
+    const texture = new THREE.CanvasTexture(canvas2d);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    textureRef.current = texture;
+
+    const vertexShader = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+
+    // OpenCV Fisheye Distortion Shader
+    const fragmentShader = `
+      varying vec2 vUv;
+      uniform sampler2D tDiffuse;
+      uniform float k1;
+      uniform float k2;
+      uniform float k3;
+      uniform float k4;
+      uniform float deadZone;
+      
+      void main() {
+        // Normalize to -1..1
+        vec2 p = vUv * 2.0 - 1.0;
+        float r = length(p);
+        
+        // 中央非畸变区域 (dead zone)，超出该半径才开始计算 theta 畸变
+        float theta = max(0.0, r - deadZone); 
+        float theta2 = theta * theta;
+        float theta4 = theta2 * theta2;
+        float theta6 = theta4 * theta2;
+        float theta8 = theta4 * theta4;
+        
+        // Inverse scaling polynomial
+        float scale = 1.0 + k1 * theta2 + k2 * theta4 + k3 * theta6 + k4 * theta8;
+        
+        vec2 p_source = p * scale;
+        vec2 uv = p_source * 0.5 + 0.5;
+        
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+          gl_FragColor = vec4(0.0);
+        } else {
+          gl_FragColor = texture2D(tDiffuse, uv);
+        }
+      }
+    `;
+
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: texture },
+        k1: { value: tilt.k1 || 0 },
+        k2: { value: tilt.k2 || 0 },
+        k3: { value: tilt.k3 || 0 },
+        k4: { value: tilt.k4 || 0 },
+        deadZone: { value: tilt.deadZone || 0 }
+      },
+      vertexShader,
+      fragmentShader,
+      transparent: true
+    });
+    materialRef.current = material;
+
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    let animationFrameId: number;
+    const renderScene = () => {
+      renderer.render(scene, camera);
+      animationFrameId = requestAnimationFrame(renderScene);
+    };
+    renderScene();
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      if (mountRef.current) {
+        mountRef.current.removeChild(renderer.domElement);
+      }
+      geometry.dispose();
+      material.dispose();
+      texture.dispose();
+      renderer.dispose();
+    };
+  }, []); // Run once on mount
+
+  useEffect(() => {
+    if (materialRef.current) {
+      materialRef.current.uniforms.k1.value = tilt.k1;
+      materialRef.current.uniforms.k2.value = tilt.k2;
+      materialRef.current.uniforms.k3.value = tilt.k3;
+      materialRef.current.uniforms.k4.value = tilt.k4;
+      materialRef.current.uniforms.deadZone.value = tilt.deadZone;
+    }
+  }, [tilt.k1, tilt.k2, tilt.k3, tilt.k4, tilt.deadZone]);
+
+  useEffect(() => {
+    const canvas = canvas2dRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = 'rgba(0, 255, 153, 0.8)';
+    ctx.font = '36px "Courier New", Courier, monospace';
+    ctx.textBaseline = 'top'; // 统一使用 top 作为基线，防止文字垂直偏移
+    ctx.fillText("MONKEY.SYS v2.0.0", 20, 30);
+    const rightTextWidth = ctx.measureText(headerText).width;
+    ctx.fillText(headerText, canvas.width - rightTextWidth - 20, 30);
+
+    ctx.beginPath();
+    ctx.moveTo(20, 80);
+    ctx.lineTo(canvas.width - 20, 80);
+    ctx.strokeStyle = 'rgba(0, 255, 153, 0.3)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.font = '48px "Courier New", Courier, monospace';
+    ctx.fillStyle = 'rgba(0, 255, 153, 1)';
+    
+    const textToDraw = displayPoem || "Awaiting input...\n\n_";
+    const lines = textToDraw.split('\n');
+    let y = 120; // 调整初始高度
+    const x = 50;
+    const lineHeight = 72;
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      if (i === lines.length - 1 && running) {
+        ctx.fillText(line, x, y);
+        const textWidth = ctx.measureText(line).width;
+        ctx.fillRect(x + textWidth + 5, y - 35, 25, 45);
+      } else {
+        ctx.fillText(line, x, y);
+      }
+      y += lineHeight;
+    }
+
+    if (textureRef.current) {
+      textureRef.current.needsUpdate = true;
+    }
+  }, [headerText, displayPoem, running]);
+
+  return <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }} />;
+};
+
 
 export function App() {
   const [settings, setSettings] = useState(defaultSettings);
@@ -345,6 +521,25 @@ export function App() {
   const [view, setView] = useState<"studio" | "library">("studio");
   const [libraryIndex, setLibraryIndex] = useState(0);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const [tilt, setTilt] = useState({ 
+    perspective: 1400, translateX: 7, translateY: 9, scale: 1.14, 
+    rotateX: 18, rotateY: 17, rotateZ: -3,
+    // OpenCV Calib3d Fisheye Coefficients
+    k1: -0.02, k2: 0.02, k3: 0.06, k4: -0.01, deadZone: 0.15,
+    // Lens Post Processing
+    lensRadius: 0, lensGlare: 0.06, lensGlareSize: 54, lensVignette: 0.55, lensShadow: 33
+  });
+  const [showDebugger, setShowDebugger] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '`' || e.key === '~') {
+        setShowDebugger(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const latestRound = rounds.at(-1);
   const metrics = useMemo(() => {
@@ -472,12 +667,37 @@ export function App() {
         <video className="scene-video" src="/assets/src/0-monkeytypingbg.mp4" autoPlay muted loop playsInline />
         <MatrixRain poems={libraryPoems} variant="scene" />
         <div className="screen-poem">
-          <div className="screen-poem-header">
-            <span>MONKEY.SYS v2.0.0</span>
-            <span>{headerText}</span>
+          <div style={{
+            position: 'absolute',
+            left: '49.6%', top: '34.8%', width: '20.8%', height: '25.2%',
+            transform: `perspective(${tilt.perspective}px) translateX(${tilt.translateX}px) translateY(${tilt.translateY}px) scale(${tilt.scale}) rotateX(${tilt.rotateX}deg) rotateY(${tilt.rotateY}deg) rotateZ(${tilt.rotateZ}deg)`,
+            transformOrigin: "center center",
+            transition: "transform 0.1s ease-out"
+          }}>
+            {showDebugger && (
+              <div style={{
+                position: 'absolute',
+                left: 0, top: 0, width: '100%', height: '100%',
+                border: '1px solid rgba(255, 0, 50, 0.8)',
+                boxShadow: '0 0 10px rgba(255, 0, 50, 0.5) inset, 0 0 10px rgba(255, 0, 50, 0.5)',
+                pointerEvents: 'none',
+                zIndex: 10
+              }}></div>
+            )}
+            
+            {/* 屏幕玻璃透镜后处理层 */}
+            <div style={{
+              position: 'absolute',
+              left: '-2%', top: '-2%', width: '104%', height: '104%',
+              pointerEvents: 'none',
+              zIndex: 20,
+              borderRadius: `${tilt.lensRadius}%`,
+              background: `radial-gradient(circle at 50% 50%, rgba(255,255,255,${tilt.lensGlare}) 0%, rgba(0,0,0,0) ${tilt.lensGlareSize}%, rgba(0,10,0,${tilt.lensVignette}) 95%)`,
+              boxShadow: `inset 0 0 ${tilt.lensShadow}px rgba(0,0,0,0.9), inset 0 0 8px rgba(0,255,153,0.2)`
+            }}></div>
+
+            <FisheyePoemRenderer headerText={headerText} displayPoem={displayPoem} running={running} tilt={tilt} />
           </div>
-          <pre>{displayPoem ? displayPoem : "Awaiting input...\n\n_"}</pre>
-          {running && <span className="cursor"></span>}
         </div>
         <img className="screen-mask" src="/assets/src/2-mask-screen-notext.png" alt="" />
       </div>
@@ -641,6 +861,66 @@ export function App() {
       <div className="sys-footer">
         ∞ // MONKEY.SYS v2.0.0
       </div>
+
+      {showDebugger && (
+      <div style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 9999, background: 'rgba(0,10,0,0.85)', padding: '15px', border: '1px solid #00ff66', color: '#00ff66', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', fontFamily: 'monospace', width: '320px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 0 15px rgba(0,255,102,0.3)' }}>
+        <strong style={{ borderBottom: '1px solid #00ff66', paddingBottom: '8px', marginBottom: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: '-15px', background: 'rgba(0,10,0,0.95)', paddingTop: '15px', zIndex: 2 }}>
+          <span>CRT TEXT TILT DEBUGGER</span>
+          <button type="button" style={{padding: '2px 8px', fontSize: '10px', minWidth: 'auto', margin: 0, height: 'auto', lineHeight: 1}} onClick={() => navigator.clipboard.writeText(JSON.stringify(tilt, null, 2)).then(() => alert('Copied!'))}>COPY</button>
+        </strong>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Perspective
+          <input type="range" min="100" max="3000" step="50" value={tilt.perspective} onChange={e => setTilt(t => ({...t, perspective: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.perspective}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Translate X
+          <input type="range" min="-500" max="500" value={tilt.translateX} onChange={e => setTilt(t => ({...t, translateX: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.translateX}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Translate Y
+          <input type="range" min="-500" max="500" value={tilt.translateY} onChange={e => setTilt(t => ({...t, translateY: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.translateY}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Scale
+          <input type="range" min="0.5" max="2" step="0.01" value={tilt.scale} onChange={e => setTilt(t => ({...t, scale: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.scale.toFixed(2)}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Rotate X
+          <input type="range" min="-90" max="90" value={tilt.rotateX} onChange={e => setTilt(t => ({...t, rotateX: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.rotateX}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Rotate Y
+          <input type="range" min="-90" max="90" value={tilt.rotateY} onChange={e => setTilt(t => ({...t, rotateY: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.rotateY}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Rotate Z
+          <input type="range" min="-90" max="90" value={tilt.rotateZ} onChange={e => setTilt(t => ({...t, rotateZ: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.rotateZ}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>OpenCV K1
+          <input type="range" min="-1" max="1" step="0.01" value={tilt.k1} onChange={e => setTilt(t => ({...t, k1: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k1.toFixed(2)}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>OpenCV K2
+          <input type="range" min="-1" max="1" step="0.01" value={tilt.k2} onChange={e => setTilt(t => ({...t, k2: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k2.toFixed(2)}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>OpenCV K3
+          <input type="range" min="-1" max="1" step="0.01" value={tilt.k3} onChange={e => setTilt(t => ({...t, k3: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k3.toFixed(2)}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>OpenCV K4
+          <input type="range" min="-1" max="1" step="0.01" value={tilt.k4} onChange={e => setTilt(t => ({...t, k4: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.k4.toFixed(2)}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Dead Zone
+          <input type="range" min="0" max="1" step="0.05" value={tilt.deadZone} onChange={e => setTilt(t => ({...t, deadZone: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.deadZone.toFixed(2)}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Lens Glare
+          <input type="range" min="0" max="0.5" step="0.01" value={tilt.lensGlare} onChange={e => setTilt(t => ({...t, lensGlare: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensGlare.toFixed(2)}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Glare Size
+          <input type="range" min="0" max="80" step="1" value={tilt.lensGlareSize} onChange={e => setTilt(t => ({...t, lensGlareSize: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensGlareSize}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Vignette
+          <input type="range" min="0" max="1" step="0.05" value={tilt.lensVignette} onChange={e => setTilt(t => ({...t, lensVignette: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensVignette.toFixed(2)}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Inner Shadow
+          <input type="range" min="0" max="100" step="1" value={tilt.lensShadow} onChange={e => setTilt(t => ({...t, lensShadow: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensShadow}</span>
+        </label>
+        <label style={{display:'flex', justifyContent:'space-between', alignItems: 'center', margin: 0}}>Corner Radius
+          <input type="range" min="0" max="50" step="1" value={tilt.lensRadius} onChange={e => setTilt(t => ({...t, lensRadius: +e.target.value}))} style={{width: '120px', margin: 0}} /> <span style={{width: '30px', textAlign: 'right'}}>{tilt.lensRadius}%</span>
+        </label>
+      </div>
+      )}
     </div>
   );
 }
