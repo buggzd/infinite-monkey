@@ -124,6 +124,7 @@ type RainColumn = {
   drift: number;
   text: string;
   layer: "far" | "mid" | "near";
+  lifespan: number;
 };
 
 const fallbackRainPoems: RainPoem[] = [
@@ -178,20 +179,26 @@ function createRainColumns(width: number, height: number, sources: string[], var
     const seed = sources[Math.floor(Math.random() * sources.length)] || rainGlyphs;
     const textLength = layer === "near" ? 42 : layer === "mid" ? 36 : 30;
     const text = makeRainText({ theme: "RAIN", poem: seed }, textLength + 24);
-    const travel = height + textLength * step + 260;
+    
+    const speed = layer === "far" ? 42 + Math.random() * 49 : layer === "mid" ? 101 + Math.random() * 91 : 182 + Math.random() * 156;
+    // 计算到底部的时长
+    const timeToBottom = (height + textLength * step) / speed;
+    // 生命周期控制在落到底部之前的随机时间，部分也会落到底部
+    const lifespan = timeToBottom * (0.35 + Math.random() * 0.8);
 
     columns.push({
       id: i,
       x: Math.random() * width,
-      speed: layer === "far" ? 42 + Math.random() * 49 : layer === "mid" ? 101 + Math.random() * 91 : 182 + Math.random() * 156,
-      offset: Math.random() * travel,
+      speed,
+      offset: Math.random() * lifespan,
       fontSize,
       step,
       length: textLength,
       alpha: layer === "far" ? 0.12 + Math.random() * 0.1 : layer === "mid" ? 0.24 + Math.random() * 0.18 : 0.46 + Math.random() * 0.28,
-      drift: (Math.random() - 0.5) * (layer === "near" ? 46 : 22),
+      drift: 0,
       text,
-      layer
+      layer,
+      lifespan
     });
   }
 
@@ -228,9 +235,14 @@ function MatrixRain({ poems, variant }: { poems: StoredPoem[]; variant: RainVari
     };
 
     const drawColumn = (column: RainColumn, elapsedSeconds: number) => {
-      const travel = height + column.length * column.step + 260;
-      const headY = ((elapsedSeconds * column.speed + column.offset) % travel) - column.length * column.step - 120;
-      const driftX = 0; // 移除左右飘动
+      // 当前经历的生命周期时间
+      const age = (elapsedSeconds + column.offset) % column.lifespan;
+      // 头部Y坐标从屏幕最顶端上方开始，平滑向下落
+      const headY = age * column.speed - column.length * column.step;
+      const driftX = 0; 
+      
+      // 快结束生命周期时全局淡出，防止突然消失
+      const lifeFade = age > column.lifespan - 1.5 ? Math.max(0, (column.lifespan - age) / 1.5) : 1.0;
       
       const highlightCycle = column.length + 15;
       const highlightSpeed = column.layer === "near" ? 8 : column.layer === "mid" ? 5 : 3;
@@ -288,7 +300,7 @@ function MatrixRain({ poems, variant }: { poems: StoredPoem[]; variant: RainVari
         const edgeFade = y < 80 ? Math.max(0, y / 80) : y > height - 80 ? Math.max(0, (height - y) / 80) : 1;
         // 增加雨的层次感
         const layerMultiplier = column.layer === "near" ? 1.3 : column.layer === "mid" ? 0.9 : 0.5;
-        const finalAlpha = baseAlpha * column.alpha * 2.5 * edgeFade * layerMultiplier;
+        const finalAlpha = baseAlpha * column.alpha * 2.5 * edgeFade * layerMultiplier * lifeFade;
         
         if (finalAlpha <= 0.01) continue;
 
@@ -334,9 +346,15 @@ function MatrixRain({ poems, variant }: { poems: StoredPoem[]; variant: RainVari
 }
 const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) => {
   const mountRef = useRef<HTMLDivElement>(null);
-  const canvas2dRef = useRef<HTMLCanvasElement>(null);
-  const textureRef = useRef<THREE.CanvasTexture | null>(null);
+  const canvas2dRef = useRef<HTMLCanvasElement | null>(null);
   const materialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const textureRef = useRef<THREE.CanvasTexture | null>(null);
+  const [cursorVisible, setCursorVisible] = useState(true);
+
+  useEffect(() => {
+    const timer = setInterval(() => setCursorVisible(v => !v), 530);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -481,7 +499,7 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
     ctx.font = '48px "Courier New", Courier, monospace';
     ctx.fillStyle = 'rgba(0, 255, 153, 1)';
     
-    const textToDraw = displayPoem || "Awaiting input...\n\n_";
+    const textToDraw = displayPoem || "Awaiting input...\n\n";
     const lines = textToDraw.split('\n');
     let y = 120; // 调整初始高度
     const x = 50;
@@ -489,12 +507,17 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
-      if (i === lines.length - 1 && running) {
-        ctx.fillText(line, x, y);
+      // 若原文本中带有下划线作为光标占位，可在此忽略
+      if (line === "_") line = "";
+      if (line.endsWith("_")) line = line.slice(0, -1);
+      
+      ctx.fillText(line, x, y);
+      
+      // 在最后一行绘制闪烁的物理光标块
+      if (i === lines.length - 1 && cursorVisible) {
         const textWidth = ctx.measureText(line).width;
-        ctx.fillRect(x + textWidth + 5, y - 35, 25, 45);
-      } else {
-        ctx.fillText(line, x, y);
+        // 因为 baseline=top，y 代表字符顶部，所以光标从 y+5 开始画，高度约42
+        ctx.fillRect(x + textWidth + 5, y + 5, 25, 42);
       }
       y += lineHeight;
     }
@@ -502,7 +525,7 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
     if (textureRef.current) {
       textureRef.current.needsUpdate = true;
     }
-  }, [headerText, displayPoem, running]);
+  }, [headerText, displayPoem, cursorVisible]);
 
   return <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }} />;
 };
