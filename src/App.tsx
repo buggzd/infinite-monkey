@@ -72,6 +72,8 @@ type Settings = {
   temperature: number;
 };
 
+type Language = "zh" | "en";
+
 const defaultSettings: Settings = {
   baseUrl: "http://127.0.0.1:65110/v1",
   apiKey: "",
@@ -85,28 +87,125 @@ const defaultSettings: Settings = {
   temperature: 0.9
 };
 
-function asSingleGlyph(value: string) {
-  return Array.from(value.trim())[0] ?? "";
-}
+const translations = {
+  zh: {
+    languageLabel: "语言",
+    navHome: "首页",
+    navPoems: "诗篇",
+    navArchive: "诗集",
+    navAbout: "关于",
+    navTerminal: "终端",
+    connect: "连接",
+    title: "INFINITE MONKEY",
+    tagline: "Burn tokens! Prove the void!",
+    panelTitle: "算法。混沌。诗。",
+    panelDesc: ["噫，以此吞金之愚举，竟得证虚空即妙境，诚乃数字时代之大旷达者也。"],
+    start: "开始",
+    halt: "[ 暂停 ]",
+    config: "系统设置",
+    protocol: "协议",
+    temperature: "温度",
+    apiKey: "API_KEY",
+    apiPlaceholder: "留空使用默认",
+    themeOverride: "主题覆写",
+    themePlaceholder: "自动生成",
+    roll: "掷骰",
+    rollTitle: "随机主题",
+    char0: "首字",
+    char1: "第二字",
+    char2: "第三字",
+    sysStatus: "系统状态",
+    studio: "生成",
+    archive: "诗集",
+    rounds: "轮数",
+    tokens: "令牌",
+    tokenLabel: "令牌",
+    systemLabel: "猴子系统 v2.0.0",
+    footer: "∞ // 猴子系统 v2.0.0",
+    emptyPoem: "等待输入...\n\n",
+    ready: "系统就绪",
+    empty: "空",
+    staticAnomaly: "静态异常",
+    noChannel: "cc-switch 全局路由当前没有可用渠道。请检查全局路由、账号额度或协议选择。",
+    endpointMismatch: "接口路径不匹配。Anthropic 协议会请求 /v1/messages，OpenAI 协议会请求 /v1/chat/completions。"
+  },
+  en: {
+    languageLabel: "Language",
+    navHome: "HOME",
+    navPoems: "POEMS",
+    navArchive: "ARCHIVE",
+    navAbout: "ABOUT",
+    navTerminal: "TERMINAL",
+    connect: "CONNECT",
+    title: "INFINITE MONKEY",
+    tagline: "Burn tokens! Prove the void!",
+    panelTitle: "ALGORITHM. CHAOS. POETRY.",
+    panelDesc: ["Behold the epic magnanimity of this endeavor—to burn through heaven’s tokens proving the void can sing, a true masterpiece of digital futility."],
+    start: "> START_SEQUENCE_",
+    halt: "[ HALT ]",
+    config: "SYS_CFG",
+    protocol: "PROTOCOL",
+    temperature: "TEMPERATURE",
+    apiKey: "API_KEY",
+    apiPlaceholder: "leave empty for default",
+    themeOverride: "THEME_OVERRIDE",
+    themePlaceholder: "auto_generate",
+    roll: "RND",
+    rollTitle: "Roll Random",
+    char0: "CHAR_0",
+    char1: "CHAR_1",
+    char2: "CHAR_2",
+    sysStatus: "SYS STATUS",
+    studio: "STUDIO",
+    archive: "ARCHIVE",
+    rounds: "ROUNDS",
+    tokens: "TOKENS",
+    tokenLabel: "TOKENS",
+    systemLabel: "MONKEY.SYS v2.0.0",
+    footer: "∞ // MONKEY.SYS v2.0.0",
+    emptyPoem: "Awaiting input...\n\n",
+    ready: "SYSTEM.READY",
+    empty: "EMPTY",
+    staticAnomaly: "STATIC_ANOMALY",
+    noChannel: "No available channels in global route. Check cc-switch.",
+    endpointMismatch: "Endpoint path mismatch (404)."
+  }
+} as const;
 
-function statusText(status: string) {
-  const map: Record<string, string> = {
+const statusLabels: Record<Language, Record<string, string>> = {
+  zh: {
+    idle: "离线",
+    starting: "启动中",
+    running: "生成中",
+    stopped: "已暂停",
+    done: "完成",
+    error: "故障"
+  },
+  en: {
     idle: "OFFLINE",
     starting: "INIT...",
     running: "SYNCING",
     stopped: "PAUSED",
     done: "COMPLETE",
     error: "ERR_FAULT"
-  };
-  return map[status] ?? status;
+  }
+};
+
+function asSingleGlyph(value: string) {
+  return Array.from(value.trim())[0] ?? "";
 }
 
-function friendlyError(message: string) {
+function statusText(status: string, language: Language) {
+  return statusLabels[language][status] ?? status;
+}
+
+function friendlyError(message: string, language: Language) {
+  const t = translations[language];
   if (message.includes("全部渠道不可提供当前模型")) {
-    return `${message}\n\nNo available channels in global route. Check cc-switch.`;
+    return `${message}\n\n${t.noChannel}`;
   }
   if (message.includes("404")) {
-    return `${message}\n\nEndpoint path mismatch (404).`;
+    return `${message}\n\n${t.endpointMismatch}`;
   }
   return message;
 }
@@ -588,7 +687,7 @@ function WebGLMatrixRain({ poems, variant }: { poems: StoredPoem[]; variant: Rai
 
   return <div ref={mountRef} className={`matrix-rain matrix-rain-${variant}`} aria-hidden="true" style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'absolute', top: 0, left: 0 }} />;
 }
-const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) => {
+const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt, emptyText, systemLabel }: any) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvas2dRef = useRef<HTMLCanvasElement | null>(null);
   const materialRef = useRef<THREE.ShaderMaterial | null>(null);
@@ -751,7 +850,7 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
     ctx.fillStyle = 'rgba(0, 255, 153, 0.8)';
     ctx.font = '36px "Courier New", Courier, monospace';
     ctx.textBaseline = 'top'; // 统一使用 top 作为基线，防止文字垂直偏移
-    ctx.fillText("MONKEY.SYS v2.0.0", 20, 30);
+    ctx.fillText(systemLabel, 20, 30);
     const rightTextWidth = ctx.measureText(headerText).width;
     ctx.fillText(headerText, canvas.width - rightTextWidth - 20, 30);
 
@@ -765,7 +864,7 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
     ctx.font = '48px "Courier New", Courier, monospace';
     ctx.fillStyle = 'rgba(0, 255, 153, 1)';
     
-    const textToDraw = displayPoem || "Awaiting input...\n\n";
+    const textToDraw = displayPoem || emptyText;
     const lines = textToDraw.split('\n');
     let y = 120; // 调整初始高度
     const x = 50;
@@ -791,7 +890,7 @@ const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) =>
     if (textureRef.current) {
       textureRef.current.needsUpdate = true;
     }
-  }, [headerText, displayPoem, cursorVisible]);
+  }, [headerText, displayPoem, emptyText, systemLabel, cursorVisible]);
 
   return <div ref={mountRef} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }} />;
 };
@@ -809,9 +908,16 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [view, setView] = useState<"studio" | "library">("studio");
   const [libraryIndex, setLibraryIndex] = useState(0);
+  const [language, setLanguage] = useState<Language>("zh");
   const eventSourceRef = useRef<EventSource | null>(null);
   const [tilt, setTilt] = useState(crtConfig);
   const [showDebugger, setShowDebugger] = useState(false);
+  const languageRef = useRef<Language>("zh");
+  const t = translations[language];
+
+  useEffect(() => {
+    languageRef.current = language;
+  }, [language]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -822,6 +928,10 @@ export function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+  }, [language]);
 
   const latestRound = rounds.at(-1);
   const metrics = useMemo(() => {
@@ -885,7 +995,7 @@ export function App() {
 
     if (!response.ok) {
       setStatus("error");
-      setError(await response.text());
+      setError(friendlyError(await response.text(), languageRef.current));
       return;
     }
 
@@ -902,7 +1012,7 @@ export function App() {
       }
       if (payload.type === "status") {
         setStatus(payload.status);
-        if (payload.message) setError(friendlyError(payload.message));
+        if (payload.message) setError(friendlyError(payload.message, languageRef.current));
       }
       if (payload.type === "round") {
         setRounds((current) => [...current, payload]);
@@ -910,7 +1020,7 @@ export function App() {
       }
       if (payload.type === "error") {
         setStatus("error");
-        setError(friendlyError(payload.message));
+        setError(friendlyError(payload.message, languageRef.current));
       }
     };
     stream.onerror = () => {
@@ -930,8 +1040,8 @@ export function App() {
   const running = status === "starting" || status === "running";
   const displayPoem = view === "studio" ? latestRound?.poem : libraryPoems[libraryIndex]?.poem;
   const headerText = view === "studio"
-    ? (latestRound ? `ROUND ${latestRound.round} // ${latestRound.routedModel || "UNKNOWN"}` : "SYSTEM.READY")
-    : (libraryPoems[libraryIndex] ? `ARCHIVE // ID:${libraryPoems[libraryIndex].id} // [${libraryPoems[libraryIndex].theme}]` : "EMPTY");
+    ? (latestRound ? `${language === "zh" ? `第 ${latestRound.round} 轮` : `ROUND ${latestRound.round}`} // ${latestRound.routedModel || "UNKNOWN"}` : t.ready)
+    : (libraryPoems[libraryIndex] ? `${t.archive} // ID:${libraryPoems[libraryIndex].id} // [${libraryPoems[libraryIndex].theme}]` : t.empty);
   const libraryWindowStart = Math.min(libraryIndex, Math.max(0, libraryPoems.length - 2));
   const visibleLibraryPoems = libraryPoems.slice(libraryWindowStart, libraryWindowStart + 2);
 
@@ -978,7 +1088,14 @@ export function App() {
               boxShadow: `inset 0 0 ${tilt.lensShadow}px rgba(0,0,0,0.9), inset 0 0 8px rgba(0,255,153,0.2)`
             }}></div>
 
-            <FisheyePoemRenderer headerText={headerText} displayPoem={displayPoem} running={running} tilt={tilt} />
+            <FisheyePoemRenderer
+              headerText={headerText}
+              displayPoem={displayPoem}
+              running={running}
+              tilt={tilt}
+              emptyText={t.emptyPoem}
+              systemLabel={t.systemLabel}
+            />
           </div>
         </div>
         <img className="screen-mask" src="/assets/src/2-mask-screen-notext.png" alt="" />
@@ -987,48 +1104,56 @@ export function App() {
       <div className="site-frame" aria-hidden="true">
         <div className="brand-mark">∞</div>
         <nav>
-          <span className="active">HOME</span>
-          <span>POEMS</span>
-          <span>ARCHIVE</span>
-          <span>ABOUT</span>
-          <span>TERMINAL</span>
+          <span className="active">{t.navHome}</span>
+          <span>{t.navPoems}</span>
+          <span>{t.navArchive}</span>
+          <span>{t.navAbout}</span>
+          <span>{t.navTerminal}</span>
         </nav>
-        <span className="connect">CONNECT</span>
+        <span className="connect">{t.connect}</span>
       </div>
 
       <main className="shell">
         <section className="left-rail">
           <div>
-            <h1 className="glitch-text" data-text="INFINITE MONKEY">INFINITE MONKEY</h1>
-            <p className="eyebrow">poetry from the static</p>
+            <h1 className="glitch-text" data-text={t.title}>{t.title}</h1>
+            <p className="eyebrow">{t.tagline}</p>
           </div>
 
           <div className="cyber-panel">
-            <h2 className="panel-title">ALGORITHM. CHAOS. POETRY.</h2>
+            <h2 className="panel-title">{t.panelTitle}</h2>
             <p className="panel-desc">
-              An infinite monkey, an infinite time,<br/>
-              and the fragile beauty it might<br/>
-              accidentally create.
+              {t.panelDesc.map((line) => (
+                <span key={line}>{line}<br/></span>
+              ))}
             </p>
 
             <form onSubmit={start}>
               <div className="actions">
                 <button type="submit" disabled={running}>
-                  &gt; START_SEQUENCE_
+                  {t.start}
                 </button>
                 <button type="button" onClick={stop} disabled={!running}>
-                  [ HALT ]
+                  {t.halt}
                 </button>
                 <button type="button" onClick={() => setSettingsOpen(!settingsOpen)}>
-                  SYS_CFG
+                  {t.config}
                 </button>
               </div>
 
               {settingsOpen && (
                 <div className="settings-drawer blur-in">
+                  <label>
+                    {t.languageLabel}
+                    <div className="language-switch" role="group" aria-label={t.languageLabel}>
+                      <button type="button" className={language === "zh" ? "active" : ""} onClick={() => setLanguage("zh")}>中文</button>
+                      <button type="button" className={language === "en" ? "active" : ""} onClick={() => setLanguage("en")}>EN</button>
+                    </div>
+                  </label>
+
                   <div className="field-row">
                     <label>
-                      PROTOCOL
+                      {t.protocol}
                       <select
                         value={settings.protocol}
                         onChange={(event) => setSettings((c) => ({ ...c, protocol: event.target.value as "anthropic" | "openai" }))}
@@ -1038,7 +1163,7 @@ export function App() {
                       </select>
                     </label>
                     <label>
-                      TEMPERATURE
+                      {t.temperature}
                       <input
                         type="number" min="0" max="2" step="0.1"
                         value={settings.temperature}
@@ -1048,40 +1173,40 @@ export function App() {
                   </div>
 
                   <label>
-                    API_KEY
+                    {t.apiKey}
                     <input
                       type="password"
                       value={settings.apiKey}
                       onChange={(event) => setSettings((c) => ({ ...c, apiKey: event.target.value }))}
-                      placeholder="leave empty for default"
+                      placeholder={t.apiPlaceholder}
                     />
                   </label>
 
                   <label>
-                    THEME_OVERRIDE
+                    {t.themeOverride}
                     <div className="theme-row">
                       <input
                         value={settings.theme}
                         onChange={(event) => setSettings((c) => ({ ...c, theme: event.target.value }))}
-                        placeholder="auto_generate"
+                        placeholder={t.themePlaceholder}
                       />
-                      <button type="button" onClick={rollTheme} title="Roll Random">
-                        RND
+                      <button type="button" onClick={rollTheme} title={t.rollTitle}>
+                        {t.roll}
                       </button>
                     </div>
                   </label>
 
                   <div className="field-row chars">
                     <label>
-                      CHAR_0
+                      {t.char0}
                       <input maxLength={4} value={settings.firstChar} onChange={(e) => setSettings((c) => ({ ...c, firstChar: asSingleGlyph(e.target.value) }))} />
                     </label>
                     <label>
-                      CHAR_1
+                      {t.char1}
                       <input maxLength={4} value={settings.secondChar} onChange={(e) => setSettings((c) => ({ ...c, secondChar: asSingleGlyph(e.target.value) }))} />
                     </label>
                     <label>
-                      CHAR_2
+                      {t.char2}
                       <input maxLength={4} value={settings.thirdChar} onChange={(e) => setSettings((c) => ({ ...c, thirdChar: asSingleGlyph(e.target.value) }))} />
                     </label>
                   </div>
@@ -1092,25 +1217,25 @@ export function App() {
             <div className="sys-status">
               <div className="status-indicator">
                 <div className="dot" style={{ animationDuration: running ? '0.2s' : '1s' }}></div>
-                <span>SYS STATUS<br/><span style={{color: "var(--matrix-green)"}}>{statusText(status)}</span></span>
+                <span>{t.sysStatus}<br/><span style={{color: "var(--matrix-green)"}}>{statusText(status, language)}</span></span>
               </div>
             </div>
           </div>
 
           <div className="cyber-panel">
             <div className="view-tabs">
-              <button className={view === "studio" ? "active" : ""} onClick={() => setView("studio")}>STUDIO</button>
-              <button className={view === "library" ? "active" : ""} onClick={() => setView("library")}>ARCHIVE</button>
+              <button className={view === "studio" ? "active" : ""} onClick={() => setView("studio")}>{t.studio}</button>
+              <button className={view === "library" ? "active" : ""} onClick={() => setView("library")}>{t.archive}</button>
             </div>
 
             {view === "studio" ? (
               <div className="meters blur-in">
                 <div className="meter">
-                  <span>ROUNDS</span>
+                  <span>{t.rounds}</span>
                   <strong>{metrics.callCount}</strong>
                 </div>
                 <div className="meter">
-                  <span>TOKENS</span>
+                  <span>{t.tokens}</span>
                   <strong>{metrics.totalTokens}</strong>
                 </div>
               </div>
@@ -1126,8 +1251,8 @@ export function App() {
                   >
                     <span>{poem.firstChar}{poem.secondChar}{poem.thirdChar}</span>
                     <div>
-                      <strong>{poem.theme || "STATIC_ANOMALY"}</strong>
-                      <em>TOKENS: {poem.totalTokens}</em>
+                      <strong>{poem.theme || t.staticAnomaly}</strong>
+                      <em>{t.tokenLabel}: {poem.totalTokens}</em>
                     </div>
                   </div>
                   );
@@ -1141,7 +1266,7 @@ export function App() {
       </main>
 
       <div className="sys-footer">
-        ∞ // MONKEY.SYS v2.0.0
+        {t.footer}
       </div>
 
       {showDebugger && (
