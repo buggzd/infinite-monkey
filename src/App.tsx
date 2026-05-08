@@ -345,6 +345,249 @@ function MatrixRain({ poems, variant }: { poems: StoredPoem[]; variant: RainVari
 
   return <canvas ref={canvasRef} className={`matrix-rain matrix-rain-${variant}`} aria-hidden="true" />;
 }
+
+function WebGLMatrixRain({ poems, variant }: { poems: StoredPoem[]; variant: RainVariant }) {
+  const mountRef = useRef<HTMLDivElement | null>(null);
+  const sources = useMemo(() => buildRainSources(poems), [poems]);
+
+  useEffect(() => {
+    const container = mountRef.current;
+    if (!container) return undefined;
+
+    const canvas2d = document.createElement("canvas");
+    const context = canvas2d.getContext("2d", { alpha: true });
+    if (!context) return undefined;
+
+    const canvasForeground = document.createElement("canvas");
+    canvasForeground.style.position = "absolute";
+    canvasForeground.style.top = "0";
+    canvasForeground.style.left = "0";
+    canvasForeground.style.width = "100%";
+    canvasForeground.style.height = "100%";
+    canvasForeground.style.pointerEvents = "none";
+    const contextForeground = canvasForeground.getContext("2d", { alpha: true });
+    if (!contextForeground) return undefined;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 1;
+    
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer.domElement.style.position = "absolute";
+    renderer.domElement.style.top = "0";
+    renderer.domElement.style.left = "0";
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
+    renderer.domElement.style.pointerEvents = "none";
+    
+    container.appendChild(renderer.domElement);
+    container.appendChild(canvasForeground);
+
+    const texture = new THREE.CanvasTexture(canvas2d);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+
+    const vertexShader = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `;
+
+    const fragmentShader = `
+      varying vec2 vUv;
+      uniform sampler2D tDiffuse;
+      uniform float time;
+      
+      float randomNoise(vec2 seed) {
+          return fract(sin(dot(seed * floor(time * 15.0), vec2(17.13, 3.71))) * 43758.5453123);
+      }
+      float randomNoise(float seed) {
+          return randomNoise(vec2(seed, 1.0));
+      }
+
+      void main() {
+          vec2 uv = vUv;
+          
+          float blockSize = 12.0; 
+          vec2 block = vec2(randomNoise(floor(uv * blockSize)));
+
+          float displaceNoise = pow(block.x, 8.0) * pow(block.x, 3.0);
+          float splitRGBNoise = pow(randomNoise(7.2341), 17.0);
+          float offsetX = displaceNoise - splitRGBNoise * 0.08;
+          float offsetY = displaceNoise - splitRGBNoise * 0.08;
+
+          float noiseX = 0.05 * randomNoise(13.0);
+          float noiseY = 0.05 * randomNoise(7.0);
+          vec2 offset = vec2(offsetX * noiseX, offsetY * noiseY);
+
+          vec4 colorR = texture2D(tDiffuse, uv);
+          vec4 colorG = texture2D(tDiffuse, uv + offset);
+          vec4 colorB = texture2D(tDiffuse, uv - offset);
+
+          gl_FragColor = vec4(colorR.r, colorG.g, colorB.b, max(max(colorR.a, colorG.a), colorB.a));
+      }
+    `;
+
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        tDiffuse: { value: texture },
+        time: { value: 0 }
+      },
+      vertexShader,
+      fragmentShader,
+      transparent: true
+    });
+
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    scene.add(mesh);
+
+    let width = 0;
+    let height = 0;
+    let frame = 0;
+    let lastPaint = 0;
+    let columns: RainColumn[] = [];
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
+
+    const resize = () => {
+      width = Math.max(1, container.clientWidth);
+      height = Math.max(1, container.clientHeight);
+      
+      canvas2d.width = Math.round(width * pixelRatio);
+      canvas2d.height = Math.round(height * pixelRatio);
+      canvasForeground.width = canvas2d.width;
+      canvasForeground.height = canvas2d.height;
+      renderer.setSize(width, height);
+      
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      
+      contextForeground.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      contextForeground.textAlign = "center";
+      contextForeground.textBaseline = "middle";
+      
+      columns = createRainColumns(width, height, sources, variant);
+    };
+
+    const drawColumn = (ctx: CanvasRenderingContext2D, column: RainColumn, elapsedSeconds: number) => {
+      const age = (elapsedSeconds + column.offset) % column.lifespan;
+      const headY = age * column.speed - column.length * column.step;
+      const driftX = 0; 
+      const lifeFade = age > column.lifespan - 1.5 ? Math.max(0, (column.lifespan - age) / 1.5) : 1.0;
+      const highlightCycle = column.length + 15;
+      const highlightSpeed = column.layer === "near" ? 8 : column.layer === "mid" ? 5 : 3;
+      const H = Math.floor((elapsedSeconds * highlightSpeed + column.id * 2.3) % highlightCycle);
+      const highlightY = headY - H * column.step;
+
+      if (column.layer !== "far") {
+        const glowHeight = column.layer === "near" ? 120 : 80;
+        const gradient = ctx.createLinearGradient(
+          column.x + driftX, highlightY - glowHeight * 0.8, 
+          column.x + driftX, highlightY + glowHeight * 0.6
+        );
+        gradient.addColorStop(0, "rgba(0,255,94,0)");
+        gradient.addColorStop(0.5, "rgba(0,255,94," + (column.alpha * 0.15) + ")");
+        gradient.addColorStop(0.8, "rgba(199,255,221," + (column.alpha * 0.4) + ")");
+        gradient.addColorStop(1, "rgba(220,255,235,0)");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(
+          column.x + driftX - column.fontSize * 0.8, 
+          highlightY - glowHeight * 0.8, 
+          column.fontSize * 1.6, 
+          glowHeight * 1.4
+        );
+      }
+
+      ctx.font = (column.layer === "near" ? "700 " : "500 ") + column.fontSize + 'px "Courier New", Courier, monospace';
+
+      for (let index = 0; index < column.length; index += 1) {
+        const y = headY - index * column.step;
+        if (y < -40 || y > height + 40) continue;
+
+        const distance = index - H;
+        let baseAlpha = 0;
+        let isHighlight = false;
+
+        if (distance === 0) {
+            baseAlpha = 1.0;
+            isHighlight = true;
+        } else if (distance > 0) {
+            const tailFade = 1 - (distance / Math.max(1, column.length - H));
+            baseAlpha = 0.65 * Math.pow(tailFade, 1.1);
+        } else {
+            const falloff = -distance;
+            if (falloff <= 3) {
+                baseAlpha = 0.8 * Math.pow(1 - falloff / 4, 2);
+            } else {
+                baseAlpha = 0;
+            }
+        }
+
+        const edgeFade = y < 80 ? Math.max(0, y / 80) : y > height - 80 ? Math.max(0, (height - y) / 80) : 1;
+        const layerMultiplier = column.layer === "near" ? 1.3 : column.layer === "mid" ? 0.9 : 0.5;
+        const finalAlpha = baseAlpha * column.alpha * 2.5 * edgeFade * layerMultiplier * lifeFade;
+        
+        if (finalAlpha <= 0.01) continue;
+
+        const char = column.text[(index + column.id) % column.text.length] || randomFrom(rainGlyphs);
+        ctx.globalAlpha = Math.min(1, finalAlpha);
+        
+        if (isHighlight) {
+            ctx.fillStyle = column.layer === "near" ? "#ffffff" : column.layer === "mid" ? "#eafff3" : "#c7ffdd";
+        } else {
+            ctx.fillStyle = column.layer === "near" ? "#1aff75" : column.layer === "mid" ? "#00e65c" : "#009933";
+        }
+        ctx.fillText(char, column.x + driftX, y);
+      }
+      ctx.globalAlpha = 1;
+    };
+
+    const render = (timestamp: number) => {
+      frame = requestAnimationFrame(render);
+      if (timestamp - lastPaint < 33) return;
+      lastPaint = timestamp;
+
+      context.clearRect(0, 0, width, height);
+      contextForeground.clearRect(0, 0, width, height);
+      
+      const elapsedSeconds = timestamp / 1000;
+      for (const column of columns) {
+        if (column.layer === "near") {
+          drawColumn(contextForeground, column, elapsedSeconds);
+        } else {
+          drawColumn(context, column, elapsedSeconds);
+        }
+      }
+      
+      texture.needsUpdate = true;
+      material.uniforms.time.value = elapsedSeconds;
+      renderer.render(scene, camera);
+    };
+
+    resize();
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    frame = requestAnimationFrame(render);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      renderer.dispose();
+      texture.dispose();
+      if (container.contains(renderer.domElement)) {
+        container.removeChild(renderer.domElement);
+      }
+      if (container.contains(canvasForeground)) {
+        container.removeChild(canvasForeground);
+      }
+    };
+  }, [sources, variant]);
+
+  return <div ref={mountRef} className={`matrix-rain matrix-rain-${variant}`} aria-hidden="true" style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'absolute', top: 0, left: 0 }} />;
+}
 const FisheyePoemRenderer = ({ headerText, displayPoem, running, tilt }: any) => {
   const mountRef = useRef<HTMLDivElement>(null);
   const canvas2dRef = useRef<HTMLCanvasElement | null>(null);
@@ -701,7 +944,7 @@ export function App() {
 
   return (
     <div className="app-scene">
-      <MatrixRain poems={libraryPoems} variant="backdrop" />
+      <WebGLMatrixRain poems={libraryPoems} variant="backdrop" />
       <div className="art-stage" aria-hidden="true">
         <video className="scene-video" src="/assets/src/0-monkeytypingbg.mp4" autoPlay muted loop playsInline />
         <MatrixRain poems={libraryPoems} variant="scene" />
