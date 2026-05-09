@@ -47,6 +47,12 @@ type StoredPoem = {
   createdAt: string;
 };
 
+type ThemePreset = {
+  id: string;
+  name: string;
+  theme: string;
+};
+
 type LibraryStats = {
   poemCount: number;
   totalTokens: number;
@@ -109,6 +115,16 @@ const translations = {
     apiPlaceholder: "留空使用默认",
     themeOverride: "主题覆写",
     themePlaceholder: "自动生成",
+    themePreset: "预设主题",
+    themePresetSelect: "选择预设",
+    themePresetName: "预设名称",
+    themePresetTheme: "主题内容",
+    themePresetNew: "新建",
+    themePresetSave: "保存",
+    themePresetDelete: "删除",
+    themePresetSaved: "已写入 JSON",
+    themePresetDeleted: "已删除预设",
+    themePresetEmpty: "请填写预设名称和主题内容",
     roll: "掷骰",
     rollTitle: "随机主题",
     char0: "首字",
@@ -150,6 +166,16 @@ const translations = {
     apiPlaceholder: "leave empty for default",
     themeOverride: "THEME_OVERRIDE",
     themePlaceholder: "auto_generate",
+    themePreset: "THEME_PRESET",
+    themePresetSelect: "SELECT_PRESET",
+    themePresetName: "PRESET_NAME",
+    themePresetTheme: "THEME_CONTENT",
+    themePresetNew: "NEW",
+    themePresetSave: "SAVE",
+    themePresetDelete: "DELETE",
+    themePresetSaved: "JSON saved",
+    themePresetDeleted: "Preset deleted",
+    themePresetEmpty: "Fill preset name and theme content",
     roll: "RND",
     rollTitle: "Roll Random",
     char0: "CHAR_0",
@@ -909,6 +935,11 @@ export function App() {
   const [view, setView] = useState<"studio" | "library">("studio");
   const [libraryIndex, setLibraryIndex] = useState(0);
   const [language, setLanguage] = useState<Language>("zh");
+  const [themePresets, setThemePresets] = useState<ThemePreset[]>([]);
+  const [selectedThemePresetId, setSelectedThemePresetId] = useState("");
+  const [presetName, setPresetName] = useState("");
+  const [presetTheme, setPresetTheme] = useState("");
+  const [presetStatus, setPresetStatus] = useState("");
   const eventSourceRef = useRef<EventSource | null>(null);
   const [tilt, setTilt] = useState(crtConfig);
   const [showDebugger, setShowDebugger] = useState(false);
@@ -942,6 +973,7 @@ export function App() {
 
   useEffect(() => {
     void loadLibrary();
+    void loadThemePresets();
 
     const updateScale = () => {
       const designWidth = 1600;
@@ -962,6 +994,8 @@ export function App() {
     const response = await fetch("/api/theme/roll");
     const data = (await response.json()) as { theme: string };
     setSettings((current) => ({ ...current, theme: data.theme }));
+    setPresetTheme(data.theme);
+    setSelectedThemePresetId("");
   }
 
   async function loadLibrary() {
@@ -971,6 +1005,85 @@ export function App() {
     setLibraryPoems(libraryData.poems);
     setLibraryStats(statsData);
     setLibraryIndex((current) => Math.min(current, Math.max(0, libraryData.poems.length - 1)));
+  }
+
+  async function loadThemePresets() {
+    const response = await fetch("/api/theme/presets");
+    const data = (await response.json()) as { presets: ThemePreset[] };
+    setThemePresets(data.presets);
+    if (data.presets.length > 0) {
+      const firstPreset = data.presets[0];
+      setSelectedThemePresetId(firstPreset.id);
+      setPresetName(firstPreset.name);
+      setPresetTheme(firstPreset.theme);
+    }
+  }
+
+  function selectThemePreset(id: string) {
+    setSelectedThemePresetId(id);
+    const preset = themePresets.find((item) => item.id === id);
+    if (!preset) {
+      setPresetName("");
+      setPresetTheme("");
+      return;
+    }
+    setPresetName(preset.name);
+    setPresetTheme(preset.theme);
+    setSettings((current) => ({ ...current, theme: preset.theme }));
+    setPresetStatus("");
+  }
+
+  async function saveThemePreset() {
+    const name = presetName.trim();
+    const theme = presetTheme.trim();
+    if (!name || !theme) {
+      setPresetStatus(t.themePresetEmpty);
+      return;
+    }
+
+    const id = selectedThemePresetId || `custom-${Date.now().toString(36)}`;
+    const nextPreset = { id, name, theme };
+    const exists = themePresets.some((preset) => preset.id === id);
+    const nextPresets = exists
+      ? themePresets.map((preset) => (preset.id === id ? nextPreset : preset))
+      : [...themePresets, nextPreset];
+
+    const response = await fetch("/api/theme/presets", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ presets: nextPresets })
+    });
+    if (!response.ok) {
+      setPresetStatus(await response.text());
+      return;
+    }
+    const data = (await response.json()) as { presets: ThemePreset[] };
+    setThemePresets(data.presets);
+    setSelectedThemePresetId(id);
+    setSettings((current) => ({ ...current, theme }));
+    setPresetStatus(t.themePresetSaved);
+  }
+
+  async function deleteThemePreset() {
+    if (!selectedThemePresetId || themePresets.length <= 1) return;
+    const nextPresets = themePresets.filter((preset) => preset.id !== selectedThemePresetId);
+    const response = await fetch("/api/theme/presets", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ presets: nextPresets })
+    });
+    if (!response.ok) {
+      setPresetStatus(await response.text());
+      return;
+    }
+    const data = (await response.json()) as { presets: ThemePreset[] };
+    const nextSelected = data.presets[0];
+    setThemePresets(data.presets);
+    setSelectedThemePresetId(nextSelected?.id ?? "");
+    setPresetName(nextSelected?.name ?? "");
+    setPresetTheme(nextSelected?.theme ?? "");
+    if (nextSelected) setSettings((current) => ({ ...current, theme: nextSelected.theme }));
+    setPresetStatus(t.themePresetDeleted);
   }
 
   async function start(event: FormEvent) {
@@ -1183,11 +1296,55 @@ export function App() {
                   </label>
 
                   <label>
+                    {t.themePreset}
+                    <div className="preset-editor">
+                      <select value={selectedThemePresetId} onChange={(event) => selectThemePreset(event.target.value)}>
+                        <option value="">{t.themePresetNew}</option>
+                        {themePresets.map((preset) => (
+                          <option key={preset.id} value={preset.id}>
+                            {preset.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={presetName}
+                        onChange={(event) => setPresetName(event.target.value)}
+                        placeholder={t.themePresetName}
+                      />
+                      <textarea
+                        value={presetTheme}
+                        onChange={(event) => {
+                          setPresetTheme(event.target.value);
+                          setSettings((current) => ({ ...current, theme: event.target.value }));
+                        }}
+                        placeholder={t.themePresetTheme}
+                        rows={3}
+                      />
+                      <div className="preset-actions">
+                        <button type="button" onClick={saveThemePreset}>{t.themePresetSave}</button>
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={deleteThemePreset}
+                          disabled={!selectedThemePresetId || themePresets.length <= 1}
+                        >
+                          {t.themePresetDelete}
+                        </button>
+                      </div>
+                      {presetStatus && <span className="preset-status">{presetStatus}</span>}
+                    </div>
+                  </label>
+
+                  <label>
                     {t.themeOverride}
                     <div className="theme-row">
                       <input
                         value={settings.theme}
-                        onChange={(event) => setSettings((c) => ({ ...c, theme: event.target.value }))}
+                        onChange={(event) => {
+                          setSettings((c) => ({ ...c, theme: event.target.value }));
+                          setPresetTheme(event.target.value);
+                          setSelectedThemePresetId("");
+                        }}
                         placeholder={t.themePlaceholder}
                       />
                       <button type="button" onClick={rollTheme} title={t.rollTitle}>

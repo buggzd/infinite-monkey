@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+
 const commonChineseChars =
   "的一是在不了有人和国中大为上个民我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所道经十" +
   "三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形" +
@@ -9,6 +12,12 @@ const commonChineseChars =
   "府称太准精值号率族维划选标写存候毛亲快效斯院查江型眼王按格养易置派层片始却专状育厂京识适属圆包火住调满县局照参红细引听该铁价" +
   "严首底液官德随病苏失尔死讲配女黄推显谈罪神艺呢席含企望密批营项防举球英氧势告李台落木帮轮破亚师围注远字材排供河态封另施减树溶" +
   "怎止案言士均武固叶鱼波视仅费紧爱左章早朝害续轻服试食充兵源判护司足某练差致板田降黑犯负击范继兴似余坚曲输修故城夫够送笔船占右";
+
+export type ThemePreset = {
+  id: string;
+  name: string;
+  theme: string;
+};
 
 export const themes = [
   "凌晨三点的云服务器",
@@ -23,8 +32,59 @@ export const themes = [
   "一次没有必要的重试"
 ];
 
+const themePresetPath = join(process.cwd(), "data", "theme-presets.json");
+
+const defaultThemePresets: ThemePreset[] = themes.map((theme, index) => ({
+  id: `default-${index + 1}`,
+  name: theme,
+  theme
+}));
+
+function normalizeThemePreset(input: unknown, index: number): ThemePreset | null {
+  if (!input || typeof input !== "object") return null;
+  const record = input as Record<string, unknown>;
+  const name = typeof record.name === "string" ? record.name.trim() : "";
+  const theme = typeof record.theme === "string" ? record.theme.trim() : "";
+  const id = typeof record.id === "string" && record.id.trim() ? record.id.trim() : `preset-${index + 1}`;
+  if (!name || !theme) return null;
+  return { id, name, theme };
+}
+
+function ensureThemePresetFile() {
+  if (existsSync(themePresetPath)) return;
+  mkdirSync(dirname(themePresetPath), { recursive: true });
+  writeFileSync(themePresetPath, `${JSON.stringify({ presets: defaultThemePresets }, null, 2)}\n`, "utf8");
+}
+
+export function getThemePresetPath() {
+  ensureThemePresetFile();
+  return themePresetPath;
+}
+
+export function listThemePresets() {
+  ensureThemePresetFile();
+  try {
+    const parsed = JSON.parse(readFileSync(themePresetPath, "utf8")) as { presets?: unknown[] };
+    const presets = (parsed.presets ?? []).map(normalizeThemePreset).filter((preset): preset is ThemePreset => Boolean(preset));
+    return presets.length > 0 ? presets : defaultThemePresets;
+  } catch {
+    return defaultThemePresets;
+  }
+}
+
+export function saveThemePresets(presets: ThemePreset[]) {
+  ensureThemePresetFile();
+  const normalized = presets
+    .map(normalizeThemePreset)
+    .filter((preset): preset is ThemePreset => Boolean(preset));
+  const nextPresets = normalized.length > 0 ? normalized : defaultThemePresets;
+  writeFileSync(themePresetPath, `${JSON.stringify({ presets: nextPresets }, null, 2)}\n`, "utf8");
+  return nextPresets;
+}
+
 export function rollTheme() {
-  return themes[Math.floor(Math.random() * themes.length)];
+  const presets = listThemePresets();
+  return presets[Math.floor(Math.random() * presets.length)]?.theme ?? themes[Math.floor(Math.random() * themes.length)];
 }
 
 export function randomChineseChar() {

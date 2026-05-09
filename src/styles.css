@@ -293,7 +293,7 @@ button:disabled {
   margin-bottom: 20px;
 }
 
-input, select {
+input, select, textarea {
   background: rgba(0, 20, 0, 0.8);
   border: 1px solid var(--matrix-dark-green);
   color: var(--matrix-green);
@@ -304,7 +304,13 @@ input, select {
   transition: border-color 0.2s;
 }
 
-input:focus, select:focus {
+textarea {
+  min-height: 76px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+input:focus, select:focus, textarea:focus {
   border-color: var(--matrix-green);
   box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
 }
@@ -340,6 +346,40 @@ label {
 }
 .theme-row button {
   padding: 0 15px;
+}
+
+.preset-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.preset-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.preset-actions button {
+  padding: 9px 10px;
+  font-size: 12px;
+}
+
+.preset-actions button.danger {
+  color: #ff4d6d;
+  border-color: rgba(255, 77, 109, 0.75);
+  box-shadow: 0 0 10px rgba(255, 77, 109, 0.16);
+}
+
+.preset-actions button.danger:hover:not(:disabled) {
+  color: #160005;
+  background: #ff4d6d;
+  box-shadow: 0 0 18px rgba(255, 77, 109, 0.45);
+}
+
+.preset-status {
+  color: rgba(126, 255, 198, 0.8);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* Right Side - CRT Monitor & Monkey */

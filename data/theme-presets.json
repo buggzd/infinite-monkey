@@ -1,0 +1,54 @@
+{
+  "presets": [
+    {
+      "id": "default-1",
+      "name": "凌晨三点的云服务器",
+      "theme": "凌晨三点的云服务器"
+    },
+    {
+      "id": "default-2",
+      "name": "三只 AI 互相夸奖",
+      "theme": "三只 AI 互相夸奖"
+    },
+    {
+      "id": "default-3",
+      "name": "永不停止的 token 炉",
+      "theme": "永不停止的 token 炉"
+    },
+    {
+      "id": "default-4",
+      "name": "被 prompt 困住的猴子",
+      "theme": "被 prompt 困住的猴子"
+    },
+    {
+      "id": "default-5",
+      "name": "预算燃烧后的灰烬",
+      "theme": "预算燃烧后的灰烬"
+    },
+    {
+      "id": "default-6",
+      "name": "意义浓度检测失败",
+      "theme": "意义浓度检测失败"
+    },
+    {
+      "id": "default-7",
+      "name": "模型在日志里做梦",
+      "theme": "模型在日志里做梦"
+    },
+    {
+      "id": "default-8",
+      "name": "随机骰子统治诗坛",
+      "theme": "随机骰子统治诗坛"
+    },
+    {
+      "id": "default-9",
+      "name": "代理端口旁的月亮",
+      "theme": "代理端口旁的月亮"
+    },
+    {
+      "id": "default-10",
+      "name": "一次没有必要的重试",
+      "theme": "一次没有必要的重试"
+    }
+  ]
+}

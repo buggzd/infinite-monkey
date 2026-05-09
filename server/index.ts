@@ -3,7 +3,7 @@ import Fastify from "fastify";
 import { z } from "zod";
 import { serverConfig } from "./config.js";
 import { attachClient, startRun, stopRun } from "./engine.js";
-import { rollTheme } from "./random.js";
+import { getThemePresetPath, listThemePresets, rollTheme, saveThemePresets } from "./random.js";
 import { getDatabasePath, getLibraryStats, listPoems } from "./storage.js";
 
 const app = Fastify({ logger: true });
@@ -22,6 +22,12 @@ const startSchema = z.object({
   temperature: z.number().min(0).max(2).default(0.9)
 });
 
+const themePresetSchema = z.object({
+  id: z.string().min(1).max(80),
+  name: z.string().min(1).max(120),
+  theme: z.string().min(1).max(500)
+});
+
 await app.register(cors, {
   origin: true
 });
@@ -31,12 +37,26 @@ app.get("/api/health", async () => ({
   ccSwitchBaseUrl: serverConfig.ccSwitchBaseUrl,
   defaultProtocol: serverConfig.defaultProtocol,
   modelHint: serverConfig.modelHint,
-  databasePath: getDatabasePath()
+  databasePath: getDatabasePath(),
+  themePresetPath: getThemePresetPath()
 }));
 
 app.get("/api/theme/roll", async () => ({
   theme: rollTheme()
 }));
+
+app.get("/api/theme/presets", async () => ({
+  presets: listThemePresets(),
+  path: getThemePresetPath()
+}));
+
+app.put("/api/theme/presets", async (request, reply) => {
+  const parsed = z.object({ presets: z.array(themePresetSchema).min(1).max(120) }).safeParse(request.body ?? {});
+  if (!parsed.success) {
+    return reply.status(400).send({ error: parsed.error.flatten() });
+  }
+  return { presets: saveThemePresets(parsed.data.presets), path: getThemePresetPath() };
+});
 
 app.get("/api/library", async (request) => {
   const query = z
